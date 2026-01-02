@@ -285,6 +285,13 @@ export class BattleManager {
             this.tanks.P2.x = intents.P2.targetX;
             this.tanks.P2.y = intents.P2.targetY;
         }
+
+        // Safety clamp: ensure tanks never exceed grid boundaries
+        for (const tid of ['P1', 'P2']) {
+            const t = this.tanks[tid];
+            t.x = Math.max(0, Math.min(this.grid.width - 1, t.x));
+            t.y = Math.max(0, Math.min(this.grid.height - 1, t.y));
+        }
     }
 
     updateBullets() {
