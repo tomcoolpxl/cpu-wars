@@ -1,0 +1,214 @@
+import { OPCODES, REGISTERS } from './InstructionSet.js';
+
+export class SimpleCompiler {
+    constructor() {
+        this.labelCount = 0;
+        this.output = [];
+    }
+
+    compile(source) {
+        this.output = [];
+        this.labelCount = 0;
+        // Clean lines: trim, remove comments, skip empty
+        const lines = source.split('\n')
+            .map(l => l.trim())
+            .filter(l => l && !l.startsWith('#') && !l.startsWith(';'));
+        
+        const contextStack = []; // Track nested 'if', 'while', 'repeat'
+
+        lines.forEach((line) => {
+            try {
+                // 1. Assignments
+                if (line.includes('=') && !line.startsWith('if') && !line.startsWith('while')) {
+                    this.parseAssignment(line);
+                    return;
+                }
+
+                // 2. Simple Actions (no args)
+                if (['turn_left', 'turn_right', 'fire'].includes(line)) {
+                    this.parseAction(line);
+                    return;
+                }
+
+                // 2b. Move with optional distance: move or move(d)
+                if (line === 'move' || line.startsWith('move(')) {
+                    this.parseMove(line);
+                    return;
+                }
+
+                // 3. Sensors
+                if (line.startsWith('scan(') || line.startsWith('ping(')) {
+                    this.parseSensor(line);
+                    return;
+                }
+
+                // 4. Control Flow: REPEAT
+                if (line.startsWith('repeat ')) {
+                    const arg = line.replace('repeat ', '').replace(':', '').trim();
+                    const startLabel = `__loop_${this.labelCount++}`;
+                    
+                    // repeat can take a number or a variable
+                    // If it's a number, we must SET a temp register? No, TankScript requires var.
+                    // Let's assume 'repeat varX' for now.
+                    const reg = this.extractReg(arg);
+                    
+                    this.emit(`LBL ${startLabel}`);
+                    contextStack.push({ type: 'repeat', label: startLabel, reg: reg });
+                    return;
+                }
+
+                // 5. Control Flow: WHILE
+                if (line.startsWith('while ')) {
+                    const startLabel = `__while_start_${this.labelCount}`;
+                    const endLabel = `__while_end_${this.labelCount}`;
+                    this.labelCount++;
+                    
+                    this.emit(`LBL ${startLabel}`);
+                    this.parseCondition(line.replace('while ', '').replace(':', ''), endLabel);
+                    
+                    contextStack.push({ type: 'while', start: startLabel, end: endLabel });
+                    return;
+                }
+
+                // 6. Control Flow: IF
+                if (line.startsWith('if ')) {
+                    const elseLabel = `__if_else_${this.labelCount}`;
+                    const endLabel = `__if_end_${this.labelCount}`;
+                    this.labelCount++;
+
+                    this.parseCondition(line.replace('if ', '').replace(':', ''), elseLabel);
+                    
+                    contextStack.push({ type: 'if', elseLbl: elseLabel, endLbl: endLabel, hasElse: false });
+                    return;
+                }
+
+                // 7. ELSE
+                if (line === 'else:' || line === 'else') {
+                    const ctx = contextStack[contextStack.length - 1];
+                    if (!ctx || ctx.type !== 'if') throw new Error("Unexpected 'else'");
+                    
+                    this.emit(`JMP ${ctx.endLbl}`);
+                    this.emit(`LBL ${ctx.elseLbl}`);
+                    ctx.hasElse = true;
+                    return;
+                }
+
+                // 8. END
+                if (line === 'end') {
+                    const ctx = contextStack.pop();
+                    if (!ctx) throw new Error("Unexpected 'end'");
+
+                    if (ctx.type === 'repeat') {
+                        this.emit(`DJNZ ${ctx.reg}, ${ctx.label}`);
+                    }
+                    else if (ctx.type === 'while') {
+                        this.emit(`JMP ${ctx.start}`);
+                        this.emit(`LBL ${ctx.end}`);
+                    }
+                    else if (ctx.type === 'if') {
+                        if (!ctx.hasElse) {
+                            this.emit(`LBL ${ctx.elseLbl}`);
+                        }
+                        this.emit(`LBL ${ctx.endLbl}`);
+                    }
+                    return;
+                }
+                
+                throw new Error(`Unknown command: "${line}"`);
+
+            } catch (err) {
+                throw new Error(`Line "${line}": ${err.message}`);
+            }
+        });
+
+        if (contextStack.length > 0) throw new Error("Unclosed block (missing 'end')");
+
+        return this.output.join('\n');
+    }
+
+    emit(asm) {
+        this.output.push(asm);
+    }
+
+    extractReg(str) {
+        const s = str.trim().toLowerCase();
+        // General purpose variables: var0-var5 -> R0-R5
+        const varMatch = s.match(/^var([0-5])$/);
+        if (varMatch) return `R${varMatch[1]}`;
+        // Read-only position/direction registers
+        if (s === 'posx') return 'PX';
+        if (s === 'posy') return 'PY';
+        if (s === 'dir') return 'DIR';
+        // Literal numbers
+        if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+        throw new Error(`Invalid variable or number: "${s}"`);
+    }
+
+    parseAction(cmd) {
+        const map = { 'turn_left': 'ROT_L', 'turn_right': 'ROT_R', 'fire': 'FIRE' };
+        this.emit(map[cmd]);
+    }
+
+    parseMove(line) {
+        let distance = 1;
+        if (line.startsWith('move(')) {
+            const content = line.substring(5, line.indexOf(')'));
+            const arg = this.extractReg(content.trim());
+            if (typeof arg === 'number') {
+                distance = arg;
+            } else {
+                // Variable distance: use a loop
+                const loopLabel = `__move_loop_${this.labelCount++}`;
+                const tempReg = arg; // Use the provided register as counter
+                this.emit(`LBL ${loopLabel}`);
+                this.emit('MOV_F');
+                this.emit(`DJNZ ${tempReg}, ${loopLabel}`);
+                return;
+            }
+        }
+        // Emit distance MOV_F instructions
+        for (let i = 0; i < distance; i++) {
+            this.emit('MOV_F');
+        }
+    }
+
+    parseAssignment(line) {
+        const parts = line.split('=');
+        const target = this.extractReg(parts[0].trim());
+        const expr = parts[1].trim();
+
+        if (expr.includes('+')) {
+            const operands = expr.split('+');
+            this.emit(`ADD ${target}, ${this.extractReg(operands[1])}`);
+        } else if (expr.includes('-')) {
+            const operands = expr.split('-');
+            this.emit(`SUB ${target}, ${this.extractReg(operands[1])}`);
+        } else {
+            this.emit(`SET ${target}, ${this.extractReg(expr)}`);
+        }
+    }
+
+    parseSensor(line) {
+        const content = line.substring(line.indexOf('(') + 1, line.indexOf(')'));
+        const args = content.split(',').map(s => this.extractReg(s.trim()));
+        if (line.startsWith('scan')) this.emit(`SCAN ${args[0]}, ${args[1]}`);
+        else if (line.startsWith('ping')) this.emit(`PING ${args[0]}, ${args[1]}`);
+    }
+
+    parseCondition(condStr, failLabel) {
+        let op = '', asmJump = '';
+        
+        if (condStr.includes('==')) { op = '=='; asmJump = 'JNE'; }
+        else if (condStr.includes('!=')) { op = '!='; asmJump = 'JE'; }
+        else if (condStr.includes('>')) { op = '>'; asmJump = 'JLE'; } // Jump if Less or Equal (False)
+        else if (condStr.includes('<')) { op = '<'; asmJump = 'JGE'; } // Jump if Greater or Equal (False)
+        else throw new Error(`Unsupported operator in condition: "${condStr}"`);
+
+        const parts = condStr.split(op);
+        const p1 = this.extractReg(parts[0]);
+        const p2 = this.extractReg(parts[1]);
+        
+        this.emit(`CMP ${p1}, ${p2}`);
+        this.emit(`${asmJump} ${failLabel}`);
+    }
+}

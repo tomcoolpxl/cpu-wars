@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU Wars</title>
+    <style>
+        body { margin: 0; padding: 0; background: #222; color: #eee; font-family: monospace; }
+        #app { display: flex; height: 100vh; }
+        #game-container { flex: 0 0 40%; display: flex; justify-content: center; align-items: center; background: #000; }
+        #editor-container { flex: 1; display: flex; flex-direction: column; padding: 10px; border-left: 1px solid #444; overflow-y: auto; }
+
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+        .header-row select { background: #333; color: #fff; border: 1px solid #555; padding: 4px 8px; }
+        .header-row button { padding: 4px 12px; font-size: 12px; }
+
+        .column-headers { display: flex; gap: 5px; margin-bottom: 3px; padding-left: 185px; }
+        .column-headers span {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-align: center;
+        }
+        .column-headers .machine-header { flex: 0 0 140px; }
+        .column-headers .asm-header { flex: 0 0 160px; }
+        .column-headers .script-header { flex: 1; }
+
+        .player-section { display: flex; gap: 5px; margin-bottom: 10px; height: 320px; }
+        .cpu-panel { flex: 0 0 180px; background: #1a1a1a; padding: 5px; font-size: 12px; border: 1px solid #444; font-family: monospace; overflow: hidden; }
+
+        .machine-panel { flex: 0 0 140px; display: flex; flex-direction: column; }
+        .asm-panel { flex: 0 0 160px; display: flex; flex-direction: column; }
+        .script-panel { flex: 1; display: flex; flex-direction: column; position: relative; }
+
+        textarea { width: 100%; height: 100%; background: #111; color: #0f0; border: 1px solid #444; padding: 5px; resize: none; box-sizing: border-box; font-family: monospace; font-size: 12px; }
+        .asm-output { background: #000; color: #0af; font-size: 11px; }
+        .machine-output { background: #000; color: #f80; font-size: 10px; }
+
+        .code-viewer { width: 100%; height: 100%; background: #000; color: #aaa; border: 1px solid #444; overflow-y: auto; font-family: monospace; padding: 5px; font-size: 11px; box-sizing: border-box; }
+        .asm-line { display: flex; padding: 2px 0; }
+        .asm-addr { color: #888; margin-right: 10px; border-right: 1px solid #333; padding-right: 5px; min-width: 20px; text-align: right; }
+        .asm-instr { color: #ddd; }
+        .asm-line.active { background: #224400; color: #fff; }
+        .asm-line.active .asm-addr { color: #8f8; border-color: #4f4; }
+
+        .machine-viewer { width: 100%; height: 100%; background: #000; color: #f80; border: 1px solid #444; overflow-y: auto; font-family: monospace; padding: 5px; font-size: 10px; box-sizing: border-box; }
+        .machine-line { display: flex; padding: 1px 0; gap: 8px; }
+        .machine-addr { color: #666; min-width: 20px; }
+        .machine-hex { color: #f80; min-width: 50px; }
+        .machine-bin { color: #a60; font-size: 9px; }
+        .machine-line.active { background: #442200; }
+        .machine-line.active .machine-hex { color: #fc0; }
+
+        .editor-wrapper { display: flex; height: 100%; border: 1px solid #444; background: #111; }
+        .line-numbers {
+            width: 25px; background: #1a1a1a; color: #555; text-align: right; padding: 5px 5px 5px 0;
+            font-size: 12px; font-family: monospace; overflow: hidden; border-right: 1px solid #333;
+        }
+
+        .reg-row { display: grid; grid-template-columns: 30px 40px 1fr; border-bottom: 1px solid #333; padding: 2px 0; }
+        .reg-lbl { color: #888; }
+        .reg-val { color: #fff; font-weight: bold; }
+        .reg-bin { color: #5aa; text-align: right; font-size: 11px; }
+
+        button { padding: 10px; background: #444; color: white; border: none; cursor: pointer; }
+        button:hover { background: #555; }
+        .btn-compile { background: #2a4a2a; }
+        .btn-compile:hover { background: #3a6a3a; }
+        .btn-halt.active { background: #a00; box-shadow: 0 0 10px #f00; }
+        .controls { display: flex; gap: 10px; margin-bottom: 10px; }
+
+        /* Info icons */
+        .info-icon {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 1px solid #888;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 12px;
+            font-size: 10px;
+            color: #888;
+            cursor: pointer;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+        .info-icon:hover { color: #fff; border-color: #fff; }
+
+        /* Modal dialog */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-content {
+            background: #1a1a1a;
+            border: 1px solid #444;
+            padding: 20px;
+            max-width: 500px;
+            max-height: 80vh;
+            font-size: 12px;
+        }
+        .modal-content h3 { margin-top: 0; color: #fff; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .modal-content table { width: 100%; border-collapse: collapse; }
+        .modal-content th, .modal-content td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #333; }
+        .modal-content th { color: #888; }
+        .modal-content code { color: #0f0; background: #000; padding: 1px 4px; }
+        .modal-close { float: right; cursor: pointer; color: #888; font-size: 18px; }
+        .modal-close:hover { color: #fff; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="game-container"></div>
+        <div id="editor-container">
+            <div class="header-row">
+                <h3 style="color: #4af;">CPU 1</h3>
+                <div>
+                    <button id="p1-compile" class="btn-compile">COMPILE</button>
+                    <select id="p1-strategy">
+                        <option value="">-- Load Script --</option>
+                        <option value="ATTACK_1">Attack 1 (Defender)</option>
+                        <option value="ATTACK_2">Attack 2 (Stalker)</option>
+                        <option value="STUPID_SPINNER">Stupid Spinner</option>
+                        <option value="CHICKEN">Chicken</option>
+                    </select>
+                </div>
+            </div>
+            <div class="column-headers">
+                <span class="machine-header">Machine<span class="info-icon" data-help="machine">i</span></span>
+                <span class="asm-header">Assembler<span class="info-icon" data-help="assembler">i</span></span>
+                <span class="script-header">TankScript<span class="info-icon" data-help="tankscript">i</span></span>
+            </div>
+            <div class="player-section">
+                <div class="cpu-panel" id="p1-cpu">
+                    <div class="reg-row"><span class="reg-lbl">PC</span><span class="reg-val" id="p1-PC">0</span><span class="reg-bin" id="p1-PC-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">ACC</span><span class="reg-val" id="p1-ACC">0</span><span class="reg-bin" id="p1-ACC-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">CMP</span><span class="reg-val" id="p1-CMP">0</span><span class="reg-bin" id="p1-CMP-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R0</span><span class="reg-val" id="p1-R0">0</span><span class="reg-bin" id="p1-R0-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R1</span><span class="reg-val" id="p1-R1">0</span><span class="reg-bin" id="p1-R1-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R2</span><span class="reg-val" id="p1-R2">0</span><span class="reg-bin" id="p1-R2-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R3</span><span class="reg-val" id="p1-R3">0</span><span class="reg-bin" id="p1-R3-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R4</span><span class="reg-val" id="p1-R4">0</span><span class="reg-bin" id="p1-R4-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R5</span><span class="reg-val" id="p1-R5">0</span><span class="reg-bin" id="p1-R5-bin">00000000</span></div>
+                    <br>
+                    <div class="reg-row"><span class="reg-lbl">PX</span><span class="reg-val" id="p1-PX">0</span><span class="reg-bin" id="p1-PX-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">PY</span><span class="reg-val" id="p1-PY">0</span><span class="reg-bin" id="p1-PY-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">DIR</span><span class="reg-val" id="p1-DIR">0</span><span class="reg-bin" id="p1-DIR-bin">00000000</span></div>
+                    <br>
+                    <div class="reg-row"><span class="reg-lbl">IR</span><span class="reg-val" id="p1-IR">-</span><span class="reg-bin" id="p1-IR-bin">00000000</span></div>
+                </div>
+
+                <div class="machine-panel">
+                    <div id="p1-machine" class="machine-viewer"></div>
+                </div>
+
+                <div class="asm-panel">
+                    <div id="p1-viewer" class="code-viewer"></div>
+                </div>
+
+                <div class="script-panel">
+                    <textarea id="p1-script" placeholder="Write TankScript here..."></textarea>
+                </div>
+            </div>
+
+            <div class="header-row">
+                <h3 style="color: #f66;">CPU 2</h3>
+                <div>
+                    <button id="p2-compile" class="btn-compile">COMPILE</button>
+                    <select id="p2-strategy">
+                        <option value="">-- Load Script --</option>
+                        <option value="ATTACK_1">Attack 1 (Defender)</option>
+                        <option value="ATTACK_2">Attack 2 (Stalker)</option>
+                        <option value="STUPID_SPINNER">Stupid Spinner</option>
+                        <option value="CHICKEN">Chicken</option>
+                    </select>
+                </div>
+            </div>
+            <div class="column-headers">
+                <span class="machine-header">Machine<span class="info-icon" data-help="machine">i</span></span>
+                <span class="asm-header">Assembler<span class="info-icon" data-help="assembler">i</span></span>
+                <span class="script-header">TankScript<span class="info-icon" data-help="tankscript">i</span></span>
+            </div>
+            <div class="player-section">
+                <div class="cpu-panel" id="p2-cpu">
+                    <div class="reg-row"><span class="reg-lbl">PC</span><span class="reg-val" id="p2-PC">0</span><span class="reg-bin" id="p2-PC-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">ACC</span><span class="reg-val" id="p2-ACC">0</span><span class="reg-bin" id="p2-ACC-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">CMP</span><span class="reg-val" id="p2-CMP">0</span><span class="reg-bin" id="p2-CMP-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R0</span><span class="reg-val" id="p2-R0">0</span><span class="reg-bin" id="p2-R0-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R1</span><span class="reg-val" id="p2-R1">0</span><span class="reg-bin" id="p2-R1-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R2</span><span class="reg-val" id="p2-R2">0</span><span class="reg-bin" id="p2-R2-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R3</span><span class="reg-val" id="p2-R3">0</span><span class="reg-bin" id="p2-R3-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R4</span><span class="reg-val" id="p2-R4">0</span><span class="reg-bin" id="p2-R4-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">R5</span><span class="reg-val" id="p2-R5">0</span><span class="reg-bin" id="p2-R5-bin">00000000</span></div>
+                    <br>
+                    <div class="reg-row"><span class="reg-lbl">PX</span><span class="reg-val" id="p2-PX">0</span><span class="reg-bin" id="p2-PX-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">PY</span><span class="reg-val" id="p2-PY">0</span><span class="reg-bin" id="p2-PY-bin">00000000</span></div>
+                    <div class="reg-row"><span class="reg-lbl">DIR</span><span class="reg-val" id="p2-DIR">0</span><span class="reg-bin" id="p2-DIR-bin">00000000</span></div>
+                    <br>
+                    <div class="reg-row"><span class="reg-lbl">IR</span><span class="reg-val" id="p2-IR">-</span><span class="reg-bin" id="p2-IR-bin">00000000</span></div>
+                </div>
+
+                <div class="machine-panel">
+                    <div id="p2-machine" class="machine-viewer"></div>
+                </div>
+
+                <div class="asm-panel">
+                    <div id="p2-viewer" class="code-viewer"></div>
+                </div>
+
+                <div class="script-panel">
+                    <textarea id="p2-script" placeholder="Write TankScript here..."></textarea>
+                </div>
+            </div>
+
+            <div class="controls">
+                <select id="level-select">
+                    <option value="1">Level 1: Open Field</option>
+                    <option value="2">Level 2: The Obstacle</option>
+                    <option value="3">Level 3: Minefield</option>
+                </select>
+                <button id="btn-run">RUN</button>
+                <button id="btn-stop" class="btn-halt">HALT</button>
+                <button id="btn-step">STEP</button>
+                <button id="btn-ff">>> (FF)</button>
+                <button id="btn-reset">RESET</button>
+            </div>
+            <div id="status-log"></div>
+        </div>
+    </div>
+
+    <!-- Help Modals -->
+    <div id="modal-machine" class="modal-overlay">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h3>Machine Code Reference</h3>
+            <p>Each instruction compiles to a single-byte opcode. The Machine column shows the hex and binary representation of the currently executing instruction.</p>
+            <table>
+                <tr><th>Hex</th><th>Binary</th><th>Opcode</th><th>Description</th></tr>
+                <tr><td>01</td><td>00000001</td><td>MOV_F</td><td>Move forward</td></tr>
+                <tr><td>02</td><td>00000010</td><td>MOV_B</td><td>Move backward</td></tr>
+                <tr><td>03</td><td>00000011</td><td>ROT_L</td><td>Rotate left 90°</td></tr>
+                <tr><td>04</td><td>00000100</td><td>ROT_R</td><td>Rotate right 90°</td></tr>
+                <tr><td>05</td><td>00000101</td><td>FIRE</td><td>Fire cannon</td></tr>
+                <tr><td>10</td><td>00010000</td><td>SCAN</td><td>Raycast sensor</td></tr>
+                <tr><td>11</td><td>00010001</td><td>PING</td><td>Get position</td></tr>
+                <tr><td>20</td><td>00100000</td><td>JMP</td><td>Unconditional jump</td></tr>
+                <tr><td>21</td><td>00100001</td><td>CMP</td><td>Compare values</td></tr>
+                <tr><td>22</td><td>00100010</td><td>JE</td><td>Jump if equal</td></tr>
+                <tr><td>23</td><td>00100011</td><td>JNE</td><td>Jump if not equal</td></tr>
+                <tr><td>24</td><td>00100100</td><td>JG</td><td>Jump if greater</td></tr>
+                <tr><td>25</td><td>00100101</td><td>JL</td><td>Jump if less</td></tr>
+                <tr><td>26</td><td>00100110</td><td>DJNZ</td><td>Decrement, jump if not zero</td></tr>
+                <tr><td>27</td><td>00100111</td><td>JGE</td><td>Jump if greater or equal</td></tr>
+                <tr><td>28</td><td>00101000</td><td>JLE</td><td>Jump if less or equal</td></tr>
+                <tr><td>30</td><td>00110000</td><td>SET</td><td>Set register value</td></tr>
+                <tr><td>31</td><td>00110001</td><td>ADD</td><td>Add to register</td></tr>
+                <tr><td>32</td><td>00110010</td><td>SUB</td><td>Subtract from register</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <div id="modal-assembler" class="modal-overlay">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h3>Assembler Reference</h3>
+            <p>The Assembler column shows the low-level instructions compiled from TankScript. Each instruction executes in sequence until an action (move/rotate/fire/scan/ping) is reached, which ends the turn.</p>
+            <table>
+                <tr><th>Instruction</th><th>Args</th><th>Description</th><th>Turn</th></tr>
+                <tr><td><code>MOV_F</code></td><td>-</td><td>Move forward 1 tile</td><td>Yes</td></tr>
+                <tr><td><code>MOV_B</code></td><td>-</td><td>Move backward 1 tile</td><td>Yes</td></tr>
+                <tr><td><code>ROT_L</code></td><td>-</td><td>Rotate left 90°</td><td>Yes</td></tr>
+                <tr><td><code>ROT_R</code></td><td>-</td><td>Rotate right 90°</td><td>Yes</td></tr>
+                <tr><td><code>FIRE</code></td><td>-</td><td>Fire cannon (max 1 bullet)</td><td>Yes</td></tr>
+                <tr><td><code>SCAN</code></td><td>Rd, Rt</td><td>Raycast: Rd=distance, Rt=type</td><td>Yes</td></tr>
+                <tr><td><code>PING</code></td><td>Rx, Ry</td><td>Store position in Rx, Ry</td><td>Yes</td></tr>
+                <tr><td><code>SET</code></td><td>R, val</td><td>Set register to value</td><td>No</td></tr>
+                <tr><td><code>ADD</code></td><td>R, val</td><td>Add value to register</td><td>No</td></tr>
+                <tr><td><code>SUB</code></td><td>R, val</td><td>Subtract from register</td><td>No</td></tr>
+                <tr><td><code>CMP</code></td><td>R, val</td><td>Compare: sets CMP flag (-1/0/1)</td><td>No</td></tr>
+                <tr><td><code>JMP</code></td><td>label</td><td>Unconditional jump</td><td>No</td></tr>
+                <tr><td><code>JE/JNE</code></td><td>label</td><td>Jump if equal / not equal</td><td>No</td></tr>
+                <tr><td><code>JG/JL</code></td><td>label</td><td>Jump if greater / less</td><td>No</td></tr>
+                <tr><td><code>JGE/JLE</code></td><td>label</td><td>Jump if >= / <=</td><td>No</td></tr>
+                <tr><td><code>DJNZ</code></td><td>R, label</td><td>Decrement R, jump if R != 0</td><td>No</td></tr>
+            </table>
+            <p style="margin-top:10px;"><b>Registers:</b> R0-R5 (read/write), PX/PY/DIR (read-only position), ACC, CMP, PC</p>
+        </div>
+    </div>
+
+    <div id="modal-tankscript" class="modal-overlay">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h3>TankScript Reference</h3>
+            <p>TankScript is a high-level language that compiles to Assembler. Each action command consumes one turn. The arena is a 16x10 grid.</p>
+            <p style="margin-top:10px;"><b>Actions</b> (each uses 1 turn):</p>
+            <table>
+                <tr><td><code>move</code> or <code>move(d)</code></td><td>Move forward d tiles (default 1). Each tile = 1 turn.</td></tr>
+                <tr><td><code>turn_left</code></td><td>Rotate 90° counter-clockwise</td></tr>
+                <tr><td><code>turn_right</code></td><td>Rotate 90° clockwise</td></tr>
+                <tr><td><code>fire</code></td><td>Fire cannon. Max 1 bullet active. Bullet speed: 2 tiles/turn.</td></tr>
+            </table>
+            <p style="margin-top:10px;"><b>Sensors</b> (each uses 1 turn):</p>
+            <table>
+                <tr><td><code>scan(dist, type)</code></td><td>Raycast forward. Returns distance and type (0=empty, 1=wall, 2=enemy)</td></tr>
+                <tr><td><code>ping(x, y)</code></td><td>Get current position into variables x and y</td></tr>
+            </table>
+            <p style="margin-top:10px;"><b>Variables:</b></p>
+            <table>
+                <tr><td><code>var0</code> - <code>var5</code></td><td>6 read/write variables for storing values</td></tr>
+                <tr><td><code>posx</code>, <code>posy</code></td><td>Current position (read-only, instant - no turn cost)</td></tr>
+                <tr><td><code>dir</code></td><td>Current direction: 0=East, 1=South, 2=West, 3=North</td></tr>
+            </table>
+            <p style="margin-top:10px;"><b>Control Flow:</b></p>
+            <table>
+                <tr><td><code>if cond: ... end</code></td><td>Conditional execution</td></tr>
+                <tr><td><code>if cond: ... else: ... end</code></td><td>If-else branch</td></tr>
+                <tr><td><code>while cond: ... end</code></td><td>Loop while condition true</td></tr>
+                <tr><td><code>repeat varN: ... end</code></td><td>Loop varN times (decrements varN)</td></tr>
+            </table>
+            <p style="margin-top:10px;"><b>Operators:</b> <code>==</code> <code>!=</code> <code>&gt;</code> <code>&lt;</code> &nbsp; <b>Assignment:</b> <code>=</code> <code>+</code> <code>-</code></p>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+    <script>
+        // Modal handling
+        document.querySelectorAll('.info-icon').forEach(icon => {
+            icon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const helpType = icon.dataset.help;
+                document.getElementById('modal-' + helpType).classList.add('active');
+            });
+        });
+        document.querySelectorAll('.modal-overlay').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal || e.target.classList.contains('modal-close')) {
+                    modal.classList.remove('active');
+                }
+            });
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+            }
+        });
+    </script>
+</body>
+</html>
