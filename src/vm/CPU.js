@@ -63,6 +63,7 @@ export class CPU {
     executeInstruction(opcode, args) {
         switch (opcode) {
             // --- ACTIONS (Return objects) ---
+            case OPCODES.NOP:   return { type: 'NOP' };
             case OPCODES.MOV_F: return { type: 'MOVE', dir: 'FORWARD' };
             case OPCODES.MOV_B: return { type: 'MOVE', dir: 'BACKWARD' };
             case OPCODES.ROT_L: return { type: 'ROTATE', dir: 'LEFT' };

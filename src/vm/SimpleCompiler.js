@@ -25,14 +25,8 @@ export class SimpleCompiler {
                 }
 
                 // 2. Simple Actions (no args)
-                if (['turn_left', 'turn_right', 'fire'].includes(line)) {
+                if (['move', 'turn_left', 'turn_right', 'fire', 'wait'].includes(line)) {
                     this.parseAction(line);
-                    return;
-                }
-
-                // 2b. Move with optional distance: move or move(d)
-                if (line === 'move' || line.startsWith('move(')) {
-                    this.parseMove(line);
                     return;
                 }
 
@@ -145,31 +139,14 @@ export class SimpleCompiler {
     }
 
     parseAction(cmd) {
-        const map = { 'turn_left': 'ROT_L', 'turn_right': 'ROT_R', 'fire': 'FIRE' };
+        const map = {
+            'move': 'MOV_F',
+            'turn_left': 'ROT_L',
+            'turn_right': 'ROT_R',
+            'fire': 'FIRE',
+            'wait': 'NOP'
+        };
         this.emit(map[cmd]);
-    }
-
-    parseMove(line) {
-        let distance = 1;
-        if (line.startsWith('move(')) {
-            const content = line.substring(5, line.indexOf(')'));
-            const arg = this.extractReg(content.trim());
-            if (typeof arg === 'number') {
-                distance = arg;
-            } else {
-                // Variable distance: use a loop
-                const loopLabel = `__move_loop_${this.labelCount++}`;
-                const tempReg = arg; // Use the provided register as counter
-                this.emit(`LBL ${loopLabel}`);
-                this.emit('MOV_F');
-                this.emit(`DJNZ ${tempReg}, ${loopLabel}`);
-                return;
-            }
-        }
-        // Emit distance MOV_F instructions
-        for (let i = 0; i < distance; i++) {
-            this.emit('MOV_F');
-        }
     }
 
     parseAssignment(line) {
@@ -179,10 +156,23 @@ export class SimpleCompiler {
 
         if (expr.includes('+')) {
             const operands = expr.split('+');
-            this.emit(`ADD ${target}, ${this.extractReg(operands[1])}`);
-        } else if (expr.includes('-')) {
+            const left = this.extractReg(operands[0].trim());
+            const right = this.extractReg(operands[1].trim());
+            // If target != left operand, need to SET first
+            if (target !== left) {
+                this.emit(`SET ${target}, ${left}`);
+            }
+            this.emit(`ADD ${target}, ${right}`);
+        } else if (expr.includes('-') && !expr.startsWith('-')) {
+            // Subtraction (but not negative number like -5)
             const operands = expr.split('-');
-            this.emit(`SUB ${target}, ${this.extractReg(operands[1])}`);
+            const left = this.extractReg(operands[0].trim());
+            const right = this.extractReg(operands[1].trim());
+            // If target != left operand, need to SET first
+            if (target !== left) {
+                this.emit(`SET ${target}, ${left}`);
+            }
+            this.emit(`SUB ${target}, ${right}`);
         } else {
             this.emit(`SET ${target}, ${this.extractReg(expr)}`);
         }

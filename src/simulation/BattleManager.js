@@ -234,21 +234,34 @@ export class BattleManager {
             // Start 1 tile in front
             const startX = tank.x + dir.x;
             const startY = tank.y + dir.y;
-            
+
             // Check wall and Bounds immediately
-            if (this.grid.isValid(startX, startY)) {
-                this.bullets.push({
-                    x: startX,
-                    y: startY,
-                    dx: dir.x,
-                    dy: dir.y,
-                    owner: tankId,
-                    dist: 0
-                });
-            } else {
-                // Spawn explosion at edge/wall immediately?
+            if (!this.grid.isValid(startX, startY)) {
+                // Hit wall/boundary immediately
                 this.events.push({ type: 'EXPLOSION', x: startX, y: startY, owner: tankId });
+                return;
             }
+
+            // Check for immediate tank hit at spawn position
+            for (const tid of ['P1', 'P2']) {
+                const t = this.tanks[tid];
+                if (t.hp > 0 && t.x === startX && t.y === startY) {
+                    t.hp--;
+                    this.log.push(`${tid} hit! HP: ${t.hp}`);
+                    this.events.push({ type: 'EXPLOSION', x: startX, y: startY, owner: tankId, hitTank: tid });
+                    return; // Bullet consumed
+                }
+            }
+
+            // No immediate hit, create bullet
+            this.bullets.push({
+                x: startX,
+                y: startY,
+                dx: dir.x,
+                dy: dir.y,
+                owner: tankId,
+                dist: 0
+            });
         }
     }
 
@@ -341,7 +354,7 @@ export class BattleManager {
                         t.hp--;
                         active = false;
                         this.log.push(`${tid} hit! HP: ${t.hp}`);
-                        this.events.push({ type: 'EXPLOSION', x: b.x, y: b.y, owner: b.owner }); // Track event
+                        this.events.push({ type: 'EXPLOSION', x: b.x, y: b.y, owner: b.owner, hitTank: tid });
                     }
                 }
             }

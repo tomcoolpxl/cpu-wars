@@ -47,102 +47,286 @@ const parser = new Parser();
 // Note: Use var0 == var0 for infinite loops since CMP requires register as first arg
 // posx/posy/dir = own position (instant, free)
 // ping(x,y) = get ENEMY position (costs 1 turn)
-// scan(dist,type) = raycast forward (costs 1 turn)
+// scan(dist,type) = raycast forward, type: 0=empty, 1=wall, 2=enemy (costs 1 turn)
+// wait = do nothing for 1 turn
+// dir values: 0=East, 1=South, 2=West, 3=North
 const STRATEGIES = {
-    ATTACK_1: `# --- Attack 1: Center Defender ---
-# Navigate to X=8, patrol vertically, hunt enemy
-var3 = 0
+    HUNTER: `# --- Hunter ---
+# Ping for enemy, chase them, scan and destroy
+var5 = 0
+while var5 == var5:
+  ping(var0, var1)
 
-while var3 == var3:
-  # Use instant posx/posy for own position
-  if posx == 8:
-    # At Center - Check vertical bounds
-    if posy < 2:
-      turn_right
+  # First align X position with enemy
+  if posx < var0:
+    # Enemy is to the East
+    if dir != 0:
       turn_right
     else:
-      if posy > 7:
-        turn_right
-        turn_right
+      move
+    end
+  else:
+    if posx > var0:
+      # Enemy is to the West
+      if dir != 2:
+        turn_left
+      else:
+        move
       end
-    end
-  else:
-    # Seek X=8
-    if posx > 8:
-      turn_left
     else:
-      turn_right
-    end
-  end
-
-  # Combat & Move
-  scan(var0, var1)
-  if var1 == 2:
-    fire
-  else:
-    if var1 == 1:
-      turn_right
-      move
-    else:
-      move
+      # Same X - align Y
+      if posy < var1:
+        # Enemy is South
+        if dir != 1:
+          turn_right
+        else:
+          scan(var2, var3)
+          if var3 == 2:
+            fire
+          else:
+            move
+          end
+        end
+      else:
+        if posy > var1:
+          # Enemy is North
+          if dir != 3:
+            turn_left
+          else:
+            scan(var2, var3)
+            if var3 == 2:
+              fire
+            else:
+              move
+            end
+          end
+        else:
+          # On top of enemy? Spin and fire!
+          turn_right
+          fire
+        end
+      end
     end
   end
 end`,
 
-    ATTACK_2: `# --- Attack 2: Predictive Stalker ---
-# Ping for enemy, hunt them down
-var3 = 0
-while var3 == var3:
-  # Ping to find enemy position
-  ping(var4, var5)
+    VERTICAL_SCANNER: `# --- Vertical Scanner ---
+# Patrol up/down, scan horizontally, fire when enemy spotted
+var5 = 0
+var4 = 0
 
-  # Chase enemy X position
-  if posx > var4:
-    turn_left
-    move
+while var5 == var5:
+  # Face East to scan
+  if dir != 0:
+    turn_right
   else:
-    if posx < var4:
-      turn_right
-      move
+    scan(var0, var1)
+    if var1 == 2:
+      fire
     else:
-      # Same X as enemy, scan and fire
-      scan(var0, var1)
-      if var1 == 2:
-        fire
+      # Move vertically
+      if var4 == 0:
+        # Moving South
+        if dir != 1:
+          turn_right
+        else:
+          if posy > 8:
+            var4 = 1
+          else:
+            move
+          end
+        end
+      else:
+        # Moving North
+        if dir != 3:
+          turn_left
+        else:
+          if posy < 1:
+            var4 = 0
+          else:
+            move
+          end
+        end
+      end
+    end
+  end
+end`,
+
+    CORNER_SNIPER: `# --- Corner Sniper ---
+# Go to top-left corner, scan East and South, wait between shots
+var5 = 0
+while var5 == var5:
+  # Get to corner first
+  if posx > 1:
+    if dir != 2:
+      turn_left
+    else:
+      move
+    end
+  else:
+    if posy > 1:
+      if dir != 3:
+        turn_left
+      else:
+        move
+      end
+    else:
+      # In corner! Alternate scanning East and South
+      if var5 == 0:
+        if dir != 0:
+          turn_right
+        else:
+          scan(var0, var1)
+          if var1 == 2:
+            fire
+            wait
+          end
+          var5 = 1
+        end
+      else:
+        if dir != 1:
+          turn_right
+        else:
+          scan(var0, var1)
+          if var1 == 2:
+            fire
+            wait
+          end
+          var5 = 0
+        end
+      end
+    end
+  end
+end`,
+
+    ZIGZAG: `# --- Zigzag Charger ---
+# Charge forward in zigzag pattern, fire often
+var0 = 3
+var1 = 0
+var5 = 0
+
+while var5 == var5:
+  # Scan ahead
+  scan(var2, var3)
+  if var3 == 2:
+    fire
+  else:
+    if var3 == 1:
+      # Wall ahead - turn around
+      turn_right
+      turn_right
+    else:
+      # Zigzag movement
+      if var1 == 0:
+        turn_left
+        move
+        turn_right
+        move
+        var0 = var0 - 1
+        if var0 == 0:
+          var1 = 1
+          var0 = 3
+        end
+      else:
+        turn_right
+        move
+        turn_left
+        move
+        var0 = var0 - 1
+        if var0 == 0:
+          var1 = 0
+          var0 = 3
+        end
+      end
+    end
+  end
+end`,
+
+    PATROL: `# --- Patrol Bot ---
+# Move in a square pattern, scan at each corner
+var0 = 4
+var5 = 0
+
+while var5 == var5:
+  scan(var1, var2)
+  if var2 == 2:
+    fire
+  else:
+    if var2 == 1:
+      # Wall - turn and continue
+      turn_right
+      var0 = 4
+    else:
+      if var0 > 0:
+        move
+        var0 = var0 - 1
+      else:
+        turn_right
+        var0 = 4
+      end
+    end
+  end
+end`,
+
+    STALKER: `# --- Stalker ---
+# Follow enemy, keep scanning and shooting
+var5 = 0
+while var5 == var5:
+  # Scan first - if enemy visible, shoot!
+  scan(var2, var3)
+  if var3 == 2:
+    fire
+  else:
+    # Ping to find enemy
+    ping(var0, var1)
+
+    # Move towards enemy X
+    if posx < var0:
+      # Enemy is East
+      if dir == 0:
+        move
       else:
         turn_right
       end
+    else:
+      if posx > var0:
+        # Enemy is West
+        if dir == 2:
+          move
+        else:
+          turn_left
+        end
+      else:
+        # Same X, move towards Y
+        if posy < var1:
+          # Enemy is South
+          if dir == 1:
+            move
+          else:
+            turn_right
+          end
+        else:
+          if posy > var1:
+            # Enemy is North
+            if dir == 3:
+              move
+            else:
+              turn_left
+            end
+          else:
+            # Same position - spin!
+            turn_right
+          end
+        end
+      end
     end
-  end
-end`,
-
-    STUPID_SPINNER: `# --- Stupid Spinner ---
-var0 = 0
-while var0 == var0:
-  turn_left
-  fire
-end`,
-
-    CHICKEN: `# --- Chicken ---
-# Run away from the enemy!
-var2 = 0
-while var2 == var2:
-  # Ping to find where enemy is
-  ping(var0, var1)
-  # Run the opposite direction
-  if posx > var0:
-    turn_right
-    move
-  else:
-    turn_left
-    move
   end
 end`
 };
 
 // Initial Load
-scriptP1.value = STRATEGIES.ATTACK_1;
-scriptP2.value = STRATEGIES.ATTACK_2;
+scriptP1.value = STRATEGIES.HUNTER;
+scriptP2.value = STRATEGIES.STALKER;
 
 // Strategy Selectors
 selP1.addEventListener('change', () => {
@@ -232,7 +416,16 @@ btnStep.addEventListener('click', () => {
     window.dispatchEvent(new CustomEvent('step-sim'));
 });
 
+// Track if simulation has been started (not reset)
+let simStarted = false;
+window.addEventListener('sim-started', () => { simStarted = true; });
+window.addEventListener('reset-sim', () => { simStarted = false; });
+
 btnFf.addEventListener('click', () => {
+    if (!simStarted) {
+        // Start the simulation first, then FF
+        btnRun.click();
+    }
     window.dispatchEvent(new CustomEvent('ff-sim'));
 });
 

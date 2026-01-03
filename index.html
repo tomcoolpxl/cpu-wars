@@ -125,10 +125,12 @@
                     <button id="p1-compile" class="btn-compile">COMPILE</button>
                     <select id="p1-strategy">
                         <option value="">-- Load Script --</option>
-                        <option value="ATTACK_1">Attack 1 (Defender)</option>
-                        <option value="ATTACK_2">Attack 2 (Stalker)</option>
-                        <option value="STUPID_SPINNER">Stupid Spinner</option>
-                        <option value="CHICKEN">Chicken</option>
+                        <option value="HUNTER">Hunter</option>
+                        <option value="STALKER">Stalker</option>
+                        <option value="VERTICAL_SCANNER">Vertical Scanner</option>
+                        <option value="CORNER_SNIPER">Corner Sniper</option>
+                        <option value="ZIGZAG">Zigzag Charger</option>
+                        <option value="PATROL">Patrol Bot</option>
                     </select>
                 </div>
             </div>
@@ -175,10 +177,12 @@
                     <button id="p2-compile" class="btn-compile">COMPILE</button>
                     <select id="p2-strategy">
                         <option value="">-- Load Script --</option>
-                        <option value="ATTACK_1">Attack 1 (Defender)</option>
-                        <option value="ATTACK_2">Attack 2 (Stalker)</option>
-                        <option value="STUPID_SPINNER">Stupid Spinner</option>
-                        <option value="CHICKEN">Chicken</option>
+                        <option value="HUNTER">Hunter</option>
+                        <option value="STALKER">Stalker</option>
+                        <option value="VERTICAL_SCANNER">Vertical Scanner</option>
+                        <option value="CORNER_SNIPER">Corner Sniper</option>
+                        <option value="ZIGZAG">Zigzag Charger</option>
+                        <option value="PATROL">Patrol Bot</option>
                     </select>
                 </div>
             </div>
@@ -301,10 +305,11 @@
             <p>TankScript is a high-level language that compiles to Assembler. Each action command consumes one turn. The arena is a 16x10 grid.</p>
             <p style="margin-top:10px;"><b>Actions</b> (each uses 1 turn):</p>
             <table>
-                <tr><td><code>move</code> or <code>move(d)</code></td><td>Move forward d tiles (default 1). Each tile = 1 turn.</td></tr>
+                <tr><td><code>move</code></td><td>Move forward 1 tile</td></tr>
                 <tr><td><code>turn_left</code></td><td>Rotate 90° counter-clockwise</td></tr>
                 <tr><td><code>turn_right</code></td><td>Rotate 90° clockwise</td></tr>
                 <tr><td><code>fire</code></td><td>Fire cannon. Max 1 bullet active. Bullet speed: 2 tiles/turn.</td></tr>
+                <tr><td><code>wait</code></td><td>Do nothing for 1 turn</td></tr>
             </table>
             <p style="margin-top:10px;"><b>Sensors</b> (each uses 1 turn):</p>
             <table>

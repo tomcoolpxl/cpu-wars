@@ -15,6 +15,7 @@ export class BattleScene extends Phaser.Scene {
         this.lastTickTime = 0;
         this.isRunning = false;
         this.isPaused = false;
+        this.userHalted = false;  // Track if user manually halted
 
         this.sim = new BattleManager();
         this.tankSprites = {};
@@ -72,11 +73,20 @@ export class BattleScene extends Phaser.Scene {
         window.addEventListener('run-sim', (e) => this.startSimulation(e.detail));
         window.addEventListener('reset-sim', (e) => this.resetSimulation(e.detail));
         window.addEventListener('ff-sim', () => {
-            if (this.isRunning) this.tickDuration = this.fastTickDuration;
+            if (this.isRunning) {
+                this.tickDuration = this.fastTickDuration;
+                // Also unpause if halted
+                if (this.isPaused) {
+                    this.isPaused = false;
+                    this.userHalted = false;
+                    window.dispatchEvent(new CustomEvent('halt-state', { detail: { halted: false } }));
+                }
+            }
         });
         window.addEventListener('stop-sim', () => {
             if (this.isRunning) {
                 this.isPaused = true;
+                this.userHalted = true;  // User explicitly halted
                 this.updateStatus("HALTED");
                 this.log("Halted.");
                 window.dispatchEvent(new CustomEvent('halt-state', { detail: { halted: true } }));
@@ -84,7 +94,8 @@ export class BattleScene extends Phaser.Scene {
         });
         window.addEventListener('step-sim', () => {
             if (this.isRunning) {
-                this.isPaused = true; // Ensure paused
+                this.isPaused = true;
+                this.userHalted = true;  // User is stepping, keep halted
                 this.doTick(this.time.now);
                 this.log("Stepped.");
                 window.dispatchEvent(new CustomEvent('halt-state', { detail: { halted: true } }));
@@ -95,7 +106,8 @@ export class BattleScene extends Phaser.Scene {
         this.uiInfo = this.add.text(10, 10, 'Tick: 0', { font: '16px monospace', fill: '#ffffff' });
         this.uiP1 = this.add.text(120, 10, 'P1 HP: 3', { font: '16px monospace', fill: '#0088ff' });
         this.uiP2 = this.add.text(240, 10, 'P2 HP: 3', { font: '16px monospace', fill: '#ff4444' });
-        
+        this.uiGameOver = this.add.text(360, 10, '', { font: '16px monospace', fill: '#ffff00' });
+
         this.tickCount = 0;
     }
     
@@ -142,8 +154,10 @@ export class BattleScene extends Phaser.Scene {
             this.createEntities(); // Reset Visuals
             this.isRunning = true;
             this.isPaused = false;
+            this.userHalted = false;  // Clear user halt on new run
             this.tickDuration = this.normalTickDuration;
             this.tickCount = 0;
+            this.uiGameOver.setText('');  // Clear game over message
             this.log(`Simulation Started (Level ${level || 1})`);
             window.dispatchEvent(new CustomEvent('halt-state', { detail: { halted: false } }));
             
@@ -162,13 +176,15 @@ export class BattleScene extends Phaser.Scene {
     resetSimulation(data) {
         const level = (data && data.level) ? data.level : 1;
         this.isRunning = false;
-        this.isPaused = false; // Unpause when resetting
+        this.isPaused = false;
+        this.userHalted = false;  // Clear user halt on reset
         this.tickDuration = this.normalTickDuration;
         this.sim = new BattleManager();
         this.sim.setupArena(level);
         this.createEntities();
         this.tickCount = 0;
         this.uiInfo.setText("Ready");
+        this.uiGameOver.setText('');  // Clear game over message
         this.log(`Reset (Level ${level}).`);
         window.dispatchEvent(new CustomEvent('halt-state', { detail: { halted: false } }));
     }
@@ -190,8 +206,11 @@ export class BattleScene extends Phaser.Scene {
         if (!state) {
             if (this.sim.isGameOver) {
                 this.isRunning = false;
-                this.updateStatus("GAME OVER: " + this.sim.winner);
-                this.log(`Game Over! Winner: ${this.sim.winner}`);
+                const winMsg = this.sim.winner === 'DRAW'
+                    ? 'GAME OVER! DRAW'
+                    : `GAME OVER! ${this.sim.winner} WINS.`;
+                this.uiGameOver.setText(winMsg);
+                this.log(winMsg);
                 window.dispatchEvent(new CustomEvent('halt-state', { detail: { halted: true } }));
             }
             return;
@@ -204,7 +223,7 @@ export class BattleScene extends Phaser.Scene {
         if (state.events && state.events.length > 0) {
             state.events.forEach(e => {
                 if (e.type === 'EXPLOSION') {
-                    this.triggerExplosion(e.x, e.y, e.owner);
+                    this.triggerExplosion(e.x, e.y, e.owner, e.hitTank);
                 }
                 if (e.type === 'PING') {
                     this.triggerPingVisual(e.tankId, e.x, e.y, e.enemyX, e.enemyY);
@@ -294,31 +313,41 @@ export class BattleScene extends Phaser.Scene {
                 }
             },
             duration: this.tickDuration,
-            ease: 'Linear',
-            onUpdate: (tween) => {
-                // Check if HP changed and flash sprite if hit
-                const tankId = sprite.texture.key.endsWith('_p1') ? 'P1' : 'P2';
-                const currentHp = data.hp;
-                const previousHp = this.sim.tanks[tankId].hp; // Get previous HP from simulation state
-                if (currentHp < previousHp) {
-                    // Flash opponent green briefly
-                    sprite.tint = 0x00FF00; // Green tint
-                    this.time.delayedCall(100, () => {
-                        sprite.tint = 0xFFFFFF; // Reset tint
-                    });
-                }
-            }
+            ease: 'Linear'
         });
     }
 
-    triggerExplosion(gx, gy, ownerId) {
+    triggerExplosion(gx, gy, ownerId, hitTankId) {
         this.isPaused = true;
         const cx = gx * this.tileSize + 20;
         const cy = gy * this.tileSize + 20;
 
+        // Flash hit tank orange rapidly if a tank was hit
+        if (hitTankId && this.tankSprites[hitTankId]) {
+            const hitSprite = this.tankSprites[hitTankId];
+            // Rapid orange flash (3 times)
+            let flashCount = 0;
+            const flashInterval = this.time.addEvent({
+                delay: 80,
+                callback: () => {
+                    flashCount++;
+                    if (flashCount % 2 === 1) {
+                        hitSprite.tint = 0xff8800; // Orange
+                    } else {
+                        hitSprite.tint = 0xffffff; // Normal
+                    }
+                    if (flashCount >= 6) {
+                        flashInterval.remove();
+                        hitSprite.tint = 0xffffff;
+                    }
+                },
+                loop: true
+            });
+        }
+
         // Check if Edge/Wall Hit
         const isEdge = (gx < 0 || gx >= this.gridWidth || gy < 0 || gy >= this.gridHeight);
-        
+
         if (isEdge) {
             const graphics = this.add.graphics();
             graphics.fillStyle(0xff0000, 1);
@@ -331,7 +360,10 @@ export class BattleScene extends Phaser.Scene {
                 duration: 300,
                 onComplete: () => {
                     graphics.destroy();
-                    this.isPaused = false;
+                    // Only unpause if user hasn't manually halted
+                    if (!this.userHalted) {
+                        this.isPaused = false;
+                    }
                     this.lastTickTime = this.time.now;
                 }
             });
@@ -406,7 +438,10 @@ export class BattleScene extends Phaser.Scene {
             },
             onComplete: () => {
                 graphics.destroy();
-                this.isPaused = false;
+                // Only unpause if user hasn't manually halted
+                if (!this.userHalted) {
+                    this.isPaused = false;
+                }
                 // Correct lastTickTime so we don't skip a beat
                 this.lastTickTime = this.time.now;
             }
@@ -437,14 +472,14 @@ export class BattleScene extends Phaser.Scene {
         const enemyAlive = enemySprite && enemySprite.visible;
 
         const graphics = this.add.graphics();
-        const speed = 0.5; // px/ms
-        const time = Math.max(200, maxRadius / speed); // minimum 200ms
+        // Complete animation within 1 tick cycle
+        const time = this.tickDuration * 0.8; // 80% of tick to ensure completion
 
         this.tweens.addCounter({
             from: 0,
             to: maxRadius,
             duration: time,
-            ease: 'Linear',
+            ease: 'Quad.easeOut',
             onUpdate: (tween) => {
                 const r = tween.getValue();
                 graphics.clear();

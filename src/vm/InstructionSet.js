@@ -22,6 +22,7 @@ export const READ_ONLY_REGISTERS = ['PX', 'PY', 'DIR'];
 
 export const OPCODES = {
     // ACTIONS (End Turn)
+    NOP:   'NOP',   // No Operation (Wait)
     MOV_F: 'MOV_F', // Move Forward
     MOV_B: 'MOV_B', // Move Backward
     ROT_L: 'ROT_L', // Rotate Left
@@ -52,6 +53,7 @@ export const OPCODES = {
 
 // Binary Mapping for UI Visualization (8-bit)
 export const OPCODE_BINARY = {
+    [OPCODES.NOP]:   0x00,
     [OPCODES.MOV_F]: 0x01,
     [OPCODES.MOV_B]: 0x02,
     [OPCODES.ROT_L]: 0x03,
@@ -91,6 +93,7 @@ export const TOKEN_TYPES = {
 };
 
 export const INSTRUCTION_SPECS = {
+    [OPCODES.NOP]:   [],
     [OPCODES.MOV_F]: [],
     [OPCODES.MOV_B]: [],
     [OPCODES.ROT_L]: [],

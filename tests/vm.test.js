@@ -94,21 +94,9 @@ describe('SimpleCompiler - Action Commands', () => {
         assertEqual(asm, 'MOV_F', 'move command');
     });
 
-    test('compiles "move(1)" to single MOV_F', () => {
-        const asm = compile('move(1)');
-        assertEqual(asm, 'MOV_F', 'move(1) command');
-    });
-
-    test('compiles "move(3)" to three MOV_F', () => {
-        const asm = compile('move(3)');
-        assertEqual(asm, 'MOV_F\nMOV_F\nMOV_F', 'move(3) command');
-    });
-
-    test('compiles "move(var0)" to loop', () => {
-        const asm = compile('move(var0)');
-        assert(asm.includes('LBL __move_loop_0'), 'should have loop label');
-        assert(asm.includes('MOV_F'), 'should have MOV_F');
-        assert(asm.includes('DJNZ R0, __move_loop_0'), 'should have DJNZ');
+    test('compiles "wait" to NOP', () => {
+        const asm = compile('wait');
+        assertEqual(asm, 'NOP', 'wait command');
     });
 
     test('compiles "turn_left" to ROT_L', () => {
@@ -127,8 +115,8 @@ describe('SimpleCompiler - Action Commands', () => {
     });
 
     test('compiles multiple actions in sequence', () => {
-        const asm = compile('move\nturn_left\nfire');
-        assertEqual(asm, 'MOV_F\nROT_L\nFIRE', 'multiple actions');
+        const asm = compile('move\nturn_left\nwait\nfire');
+        assertEqual(asm, 'MOV_F\nROT_L\nNOP\nFIRE', 'multiple actions');
     });
 });
 
@@ -196,6 +184,16 @@ describe('SimpleCompiler - Variable Assignments', () => {
     test('compiles zero assignment', () => {
         const asm = compile('var3 = 0');
         assertEqual(asm, 'SET R3, 0', 'zero assignment');
+    });
+
+    test('compiles cross-register subtraction var4 = var0 - posx', () => {
+        const asm = compile('var4 = var0 - posx');
+        assertEqual(asm, 'SET R4, R0\nSUB R4, PX', 'cross-register subtraction needs SET then SUB');
+    });
+
+    test('compiles cross-register addition var3 = var1 + var2', () => {
+        const asm = compile('var3 = var1 + var2');
+        assertEqual(asm, 'SET R3, R1\nADD R3, R2', 'cross-register addition needs SET then ADD');
     });
 });
 
@@ -404,13 +402,20 @@ describe('CPU - Action Execution', () => {
         assertEqual(action.type, 'FIRE', 'should yield FIRE');
     });
 
+    test('executes NOP and yields NOP action', () => {
+        const cpu = createCPU('wait');
+        const action = runUntilAction(cpu);
+        assertEqual(action.type, 'NOP', 'should yield NOP');
+    });
+
     test('executes multiple actions in sequence', () => {
-        const cpu = createCPU('move\nturn_left\nfire');
+        const cpu = createCPU('move\nwait\nturn_left\nfire');
         const actions = runToCompletion(cpu);
-        assertEqual(actions.length, 3, 'should have 3 actions');
+        assertEqual(actions.length, 4, 'should have 4 actions');
         assertEqual(actions[0].type, 'MOVE', 'first is MOVE');
-        assertEqual(actions[1].type, 'ROTATE', 'second is ROTATE');
-        assertEqual(actions[2].type, 'FIRE', 'third is FIRE');
+        assertEqual(actions[1].type, 'NOP', 'second is NOP');
+        assertEqual(actions[2].type, 'ROTATE', 'third is ROTATE');
+        assertEqual(actions[3].type, 'FIRE', 'fourth is FIRE');
     });
 });
 
@@ -833,6 +838,249 @@ describe('Parser - Parsing', () => {
         const { error } = parser.parse(tokens);
         assert(error, 'should have error');
         assert(error.includes('Unknown instruction'), 'should mention unknown');
+    });
+});
+
+// ============================================
+// BattleManager Tests (Game Logic)
+// ============================================
+import { BattleManager } from '../src/simulation/BattleManager.js';
+
+describe('BattleManager - Initialization', () => {
+    test('initializes with correct tank positions', () => {
+        const bm = new BattleManager();
+        assertEqual(bm.tanks.P1.x, 0, 'P1 starts at x=0');
+        assertEqual(bm.tanks.P1.y, 4, 'P1 starts at y=4');
+        assertEqual(bm.tanks.P1.facing, 0, 'P1 faces East');
+        assertEqual(bm.tanks.P1.hp, 3, 'P1 has 3 HP');
+
+        assertEqual(bm.tanks.P2.x, 15, 'P2 starts at x=15');
+        assertEqual(bm.tanks.P2.y, 5, 'P2 starts at y=5');
+        assertEqual(bm.tanks.P2.facing, 2, 'P2 faces West');
+        assertEqual(bm.tanks.P2.hp, 3, 'P2 has 3 HP');
+    });
+
+    test('grid has correct dimensions', () => {
+        const bm = new BattleManager();
+        assertEqual(bm.grid.width, 16, 'grid width is 16');
+        assertEqual(bm.grid.height, 10, 'grid height is 10');
+    });
+});
+
+// Helper to create mock CPU
+function mockCPU(stepFn) {
+    return {
+        step: stepFn,
+        registers: { PC: 0 },
+        program: [],
+        updateTankState: () => {},
+        setRegister: () => {}
+    };
+}
+
+describe('BattleManager - Movement', () => {
+    test('tank moves forward when path is clear', () => {
+        const bm = new BattleManager();
+        // P1 at (0,4) facing East, should move to (1,4)
+        bm.tanks.P1.cpu = mockCPU(() => ({ type: 'MOVE', dir: 'FORWARD' }));
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(bm.tanks.P1.x, 1, 'P1 moved to x=1');
+        assertEqual(bm.tanks.P1.y, 4, 'P1 stayed at y=4');
+    });
+
+    test('tank blocked by grid boundary', () => {
+        const bm = new BattleManager();
+        bm.tanks.P1.x = 0;
+        bm.tanks.P1.facing = 2; // Face West
+        bm.tanks.P1.cpu = mockCPU(() => ({ type: 'MOVE', dir: 'FORWARD' }));
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(bm.tanks.P1.x, 0, 'P1 blocked at boundary');
+    });
+
+    test('tank blocked by wall', () => {
+        const bm = new BattleManager();
+        bm.grid.addWall(1, 4); // Wall in front of P1
+        bm.tanks.P1.cpu = mockCPU(() => ({ type: 'MOVE', dir: 'FORWARD' }));
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(bm.tanks.P1.x, 0, 'P1 blocked by wall');
+    });
+
+    test('tank rotation changes facing', () => {
+        const bm = new BattleManager();
+        bm.tanks.P1.cpu = mockCPU(() => ({ type: 'ROTATE', dir: 'RIGHT' }));
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(bm.tanks.P1.facing, 1, 'P1 now faces South');
+    });
+});
+
+describe('BattleManager - Bullets', () => {
+    test('fire creates bullet in front of tank', () => {
+        const bm = new BattleManager();
+        bm.tanks.P1.cpu = mockCPU(() => ({ type: 'FIRE' }));
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(bm.bullets.length, 1, 'one bullet created');
+        assertEqual(bm.bullets[0].owner, 'P1', 'bullet owned by P1');
+    });
+
+    test('bullet moves 2 tiles per tick', () => {
+        const bm = new BattleManager();
+        // Manually add a bullet
+        bm.bullets.push({ x: 5, y: 4, dx: 1, dy: 0, owner: 'P1', dist: 0 });
+        bm.tanks.P1.cpu = mockCPU(() => null);
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(bm.bullets[0].x, 7, 'bullet moved 2 tiles');
+    });
+
+    test('bullet hitting tank reduces HP', () => {
+        const bm = new BattleManager();
+        // Place bullet right next to P2 (at x=15, y=5)
+        // Bullet at x=13, moving East, will hit at x=15 after moving 2 tiles
+        bm.bullets.push({ x: 13, y: 5, dx: 1, dy: 0, owner: 'P1', dist: 0 });
+        bm.tanks.P1.cpu = mockCPU(() => null);
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        const initialHP = bm.tanks.P2.hp;
+        bm.tick();
+        assertEqual(bm.tanks.P2.hp, initialHP - 1, 'P2 lost 1 HP');
+    });
+
+    test('bullet disappears on wall hit', () => {
+        const bm = new BattleManager();
+        bm.grid.addWall(7, 4);
+        bm.bullets.push({ x: 5, y: 4, dx: 1, dy: 0, owner: 'P1', dist: 0 });
+        bm.tanks.P1.cpu = mockCPU(() => null);
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(bm.bullets.length, 0, 'bullet destroyed on wall');
+    });
+
+    test('bullet disappears on boundary', () => {
+        const bm = new BattleManager();
+        // Bullet near right edge
+        bm.bullets.push({ x: 14, y: 4, dx: 1, dy: 0, owner: 'P1', dist: 0 });
+        // Move P2 out of the way
+        bm.tanks.P2.x = 10;
+        bm.tanks.P1.cpu = mockCPU(() => null);
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(bm.bullets.length, 0, 'bullet destroyed at boundary');
+    });
+
+    test('only one bullet per tank allowed', () => {
+        const bm = new BattleManager();
+        bm.bullets.push({ x: 5, y: 4, dx: 1, dy: 0, owner: 'P1', dist: 0 });
+        bm.tanks.P1.cpu = mockCPU(() => ({ type: 'FIRE' }));
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(bm.bullets.length, 1, 'still only one P1 bullet');
+    });
+
+    test('point-blank shot hits immediately', () => {
+        const bm = new BattleManager();
+        // Place tanks next to each other
+        bm.tanks.P1.x = 5;
+        bm.tanks.P1.y = 4;
+        bm.tanks.P1.facing = 0; // East
+        bm.tanks.P2.x = 6; // Right next to P1
+        bm.tanks.P2.y = 4;
+
+        bm.tanks.P1.cpu = mockCPU(() => ({ type: 'FIRE' }));
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        const initialHP = bm.tanks.P2.hp;
+        bm.tick();
+        assertEqual(bm.tanks.P2.hp, initialHP - 1, 'P2 hit at point blank');
+        assertEqual(bm.bullets.length, 0, 'no bullet created - consumed on impact');
+    });
+});
+
+describe('BattleManager - Game Over', () => {
+    test('game over when tank HP reaches 0', () => {
+        const bm = new BattleManager();
+        bm.tanks.P2.hp = 1;
+        // Bullet will hit P2
+        bm.bullets.push({ x: 13, y: 5, dx: 1, dy: 0, owner: 'P1', dist: 0 });
+        bm.tanks.P1.cpu = mockCPU(() => null);
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(bm.tanks.P2.hp, 0, 'P2 has 0 HP');
+        assert(bm.isGameOver, 'game is over');
+        assertEqual(bm.winner, 'P1', 'P1 wins');
+    });
+
+    test('draw when both tanks die same tick', () => {
+        const bm = new BattleManager();
+        bm.tanks.P1.hp = 1;
+        bm.tanks.P2.hp = 1;
+        bm.tanks.P1.x = 5;
+        bm.tanks.P2.x = 10;
+        // Bullets crossing
+        bm.bullets.push({ x: 3, y: 4, dx: 1, dy: 0, owner: 'P2', dist: 0 }); // Will hit P1 at x=5
+        bm.bullets.push({ x: 8, y: 5, dx: 1, dy: 0, owner: 'P1', dist: 0 }); // Will hit P2 at x=10
+        bm.tanks.P1.y = 4;
+        bm.tanks.P2.y = 5;
+        bm.tanks.P1.cpu = mockCPU(() => null);
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assert(bm.isGameOver, 'game is over');
+        assertEqual(bm.winner, 'DRAW', 'result is draw');
+    });
+});
+
+describe('BattleManager - Sensors', () => {
+    test('SCAN detects enemy in line of sight', () => {
+        const bm = new BattleManager();
+        // P1 at (0,4) facing East, P2 at (15,5) - not in line
+        // Move P2 to (10,4) - same row
+        bm.tanks.P2.x = 10;
+        bm.tanks.P2.y = 4;
+
+        let scanResult = {};
+        const cpu1 = mockCPU(() => ({ type: 'SCAN', destDist: 'R0', destType: 'R1' }));
+        cpu1.setRegister = (reg, val) => {
+            if (reg === 'R0') scanResult.dist = val;
+            if (reg === 'R1') scanResult.type = val;
+        };
+        bm.tanks.P1.cpu = cpu1;
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(scanResult.dist, 10, 'enemy at distance 10');
+        assertEqual(scanResult.type, 2, 'type 2 = enemy');
+    });
+
+    test('PING returns enemy position', () => {
+        const bm = new BattleManager();
+
+        let pingResult = {};
+        const cpu1 = mockCPU(() => ({ type: 'PING', destX: 'R0', destY: 'R1' }));
+        cpu1.setRegister = (reg, val) => {
+            if (reg === 'R0') pingResult.x = val;
+            if (reg === 'R1') pingResult.y = val;
+        };
+        bm.tanks.P1.cpu = cpu1;
+        bm.tanks.P2.cpu = mockCPU(() => null);
+
+        bm.tick();
+        assertEqual(pingResult.x, 15, 'enemy X is 15');
+        assertEqual(pingResult.y, 5, 'enemy Y is 5');
     });
 });
 
