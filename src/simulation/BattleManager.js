@@ -188,10 +188,20 @@ export class BattleManager {
 
     resolvePing(tankId, action) {
         const tank = this.tanks[tankId];
-        tank.cpu.setRegister(action.destX, tank.x);
-        tank.cpu.setRegister(action.destY, tank.y);
-        // Record PING event for visualization
-        this.events.push({ type: 'PING', tankId: tankId, x: tank.x, y: tank.y });
+        // PING detects the ENEMY's position (costs a turn)
+        const enemyId = tankId === 'P1' ? 'P2' : 'P1';
+        const enemy = this.tanks[enemyId];
+
+        // Store enemy position (or -1,-1 if enemy is dead)
+        if (enemy.hp > 0) {
+            tank.cpu.setRegister(action.destX, enemy.x);
+            tank.cpu.setRegister(action.destY, enemy.y);
+        } else {
+            tank.cpu.setRegister(action.destX, -1);
+            tank.cpu.setRegister(action.destY, -1);
+        }
+        // Record PING event for visualization (from self to enemy)
+        this.events.push({ type: 'PING', tankId: tankId, x: tank.x, y: tank.y, enemyX: enemy.x, enemyY: enemy.y });
     }
 
     resolveAction(tankId, action, intents) {

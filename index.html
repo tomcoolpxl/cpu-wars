@@ -249,7 +249,7 @@
                 <tr><td>04</td><td>00000100</td><td>ROT_R</td><td>Rotate right 90°</td></tr>
                 <tr><td>05</td><td>00000101</td><td>FIRE</td><td>Fire cannon</td></tr>
                 <tr><td>10</td><td>00010000</td><td>SCAN</td><td>Raycast sensor</td></tr>
-                <tr><td>11</td><td>00010001</td><td>PING</td><td>Get position</td></tr>
+                <tr><td>11</td><td>00010001</td><td>PING</td><td>Get enemy position</td></tr>
                 <tr><td>20</td><td>00100000</td><td>JMP</td><td>Unconditional jump</td></tr>
                 <tr><td>21</td><td>00100001</td><td>CMP</td><td>Compare values</td></tr>
                 <tr><td>22</td><td>00100010</td><td>JE</td><td>Jump if equal</td></tr>
@@ -279,7 +279,7 @@
                 <tr><td><code>ROT_R</code></td><td>-</td><td>Rotate right 90°</td><td>Yes</td></tr>
                 <tr><td><code>FIRE</code></td><td>-</td><td>Fire cannon (max 1 bullet)</td><td>Yes</td></tr>
                 <tr><td><code>SCAN</code></td><td>Rd, Rt</td><td>Raycast: Rd=distance, Rt=type</td><td>Yes</td></tr>
-                <tr><td><code>PING</code></td><td>Rx, Ry</td><td>Store position in Rx, Ry</td><td>Yes</td></tr>
+                <tr><td><code>PING</code></td><td>Rx, Ry</td><td>Store enemy position in Rx, Ry</td><td>Yes</td></tr>
                 <tr><td><code>SET</code></td><td>R, val</td><td>Set register to value</td><td>No</td></tr>
                 <tr><td><code>ADD</code></td><td>R, val</td><td>Add value to register</td><td>No</td></tr>
                 <tr><td><code>SUB</code></td><td>R, val</td><td>Subtract from register</td><td>No</td></tr>
@@ -309,7 +309,7 @@
             <p style="margin-top:10px;"><b>Sensors</b> (each uses 1 turn):</p>
             <table>
                 <tr><td><code>scan(dist, type)</code></td><td>Raycast forward. Returns distance and type (0=empty, 1=wall, 2=enemy)</td></tr>
-                <tr><td><code>ping(x, y)</code></td><td>Get current position into variables x and y</td></tr>
+                <tr><td><code>ping(x, y)</code></td><td>Detect enemy position. Stores enemy X,Y into variables (-1,-1 if dead)</td></tr>
             </table>
             <p style="margin-top:10px;"><b>Variables:</b></p>
             <table>

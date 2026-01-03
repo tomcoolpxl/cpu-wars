@@ -758,17 +758,17 @@ describe('Integration - Complex Programs', () => {
         assertEqual(cpu.registers[REGISTERS.R1], 2, 'type stored');
     });
 
-    test('using ping for position', () => {
+    test('using ping to detect enemy position', () => {
         const cpu = createCPU(`
             ping(var0, var1)
         `);
         const action = runUntilAction(cpu);
         assertEqual(action.type, 'PING', 'should request ping');
-        // Simulate simulator providing position
-        cpu.setRegister(REGISTERS.R0, 7);  // x
-        cpu.setRegister(REGISTERS.R1, 3);  // y
-        assertEqual(cpu.registers[REGISTERS.R0], 7, 'x stored');
-        assertEqual(cpu.registers[REGISTERS.R1], 3, 'y stored');
+        // Simulate BattleManager providing enemy position
+        cpu.setRegister(REGISTERS.R0, 7);  // enemy x
+        cpu.setRegister(REGISTERS.R1, 3);  // enemy y
+        assertEqual(cpu.registers[REGISTERS.R0], 7, 'enemy x stored');
+        assertEqual(cpu.registers[REGISTERS.R1], 3, 'enemy y stored');
     });
 });
 

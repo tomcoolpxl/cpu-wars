@@ -45,28 +45,30 @@ const tokenizer = new Tokenizer();
 const parser = new Parser();
 
 // Note: Use var0 == var0 for infinite loops since CMP requires register as first arg
+// posx/posy/dir = own position (instant, free)
+// ping(x,y) = get ENEMY position (costs 1 turn)
+// scan(dist,type) = raycast forward (costs 1 turn)
 const STRATEGIES = {
     ATTACK_1: `# --- Attack 1: Center Defender ---
-# Navigate to X=8 and Patrol vertically
+# Navigate to X=8, patrol vertically, hunt enemy
 var3 = 0
 
 while var3 == var3:
-  ping(var4, var5)
-
-  if var4 == 8:
+  # Use instant posx/posy for own position
+  if posx == 8:
     # At Center - Check vertical bounds
-    if var5 < 2:
+    if posy < 2:
       turn_right
       turn_right
     else:
-      if var5 > 7:
+      if posy > 7:
         turn_right
         turn_right
       end
     end
   else:
     # Seek X=8
-    if var4 > 8:
+    if posx > 8:
       turn_left
     else:
       turn_right
@@ -88,26 +90,25 @@ while var3 == var3:
 end`,
 
     ATTACK_2: `# --- Attack 2: Predictive Stalker ---
-# Hunt center and engage
+# Ping for enemy, hunt them down
 var3 = 0
 while var3 == var3:
+  # Ping to find enemy position
   ping(var4, var5)
 
-  if var4 > 8:
+  # Chase enemy X position
+  if posx > var4:
     turn_left
     move
   else:
-    if var4 < 8:
+    if posx < var4:
       turn_right
       move
     else:
-      # At Center, Scan for enemy
+      # Same X as enemy, scan and fire
       scan(var0, var1)
       if var1 == 2:
         fire
-        # Dodge after firing
-        turn_left
-        move
       else:
         turn_right
       end
@@ -123,11 +124,13 @@ while var0 == var0:
 end`,
 
     CHICKEN: `# --- Chicken ---
-# Run away from the fight
+# Run away from the enemy!
 var2 = 0
 while var2 == var2:
+  # Ping to find where enemy is
   ping(var0, var1)
-  if var0 > 8:
+  # Run the opposite direction
+  if posx > var0:
     turn_right
     move
   else:

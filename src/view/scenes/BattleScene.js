@@ -207,7 +207,7 @@ export class BattleScene extends Phaser.Scene {
                     this.triggerExplosion(e.x, e.y, e.owner);
                 }
                 if (e.type === 'PING') {
-                    this.triggerPingVisual(e.tankId, e.x, e.y);
+                    this.triggerPingVisual(e.tankId, e.x, e.y, e.enemyX, e.enemyY);
                 }
             });
         }
@@ -413,37 +413,32 @@ export class BattleScene extends Phaser.Scene {
         });
     }
 
-    triggerPingVisual(tankId, gx, gy) {
+    triggerPingVisual(tankId, gx, gy, enemyGx, enemyGy) {
         // Rate Limit: Only show 1 ping every 2 seconds per tank to avoid visual clutter
         const now = this.time.now;
         if (now - this.pingRateLimits[tankId] < 2000) return;
         this.pingRateLimits[tankId] = now;
 
+        // Tank position (origin of ping)
         const x = gx * this.tileSize + 20;
         const y = gy * this.tileSize + 20;
-        const color = tankId === 'P1' ? 0x0088ff : 0xff4444; 
-        
-        // Find Enemy Position
+        const color = tankId === 'P1' ? 0x0088ff : 0xff4444;
+
+        // Enemy position (target of ping)
+        const enemyX = enemyGx * this.tileSize + 20;
+        const enemyY = enemyGy * this.tileSize + 20;
         const enemyId = tankId === 'P1' ? 'P2' : 'P1';
         const enemySprite = this.tankSprites[enemyId];
-        
-        let maxRadius = 100;
-        let enemyHit = false;
-        
-        if (enemySprite && enemySprite.visible) {
-            // Calculate pixel distance
-            const dx = enemySprite.x - x;
-            const dy = enemySprite.y - y;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            maxRadius = dist;
-            enemyHit = true;
-        }
+
+        // Calculate distance to enemy
+        const dx = enemyX - x;
+        const dy = enemyY - y;
+        const maxRadius = Math.sqrt(dx*dx + dy*dy);
+        const enemyAlive = enemySprite && enemySprite.visible;
 
         const graphics = this.add.graphics();
-        const duration = enemyHit ? (maxRadius / 800) * 1000 : 500; // Speed based? Or fixed time? 
-        // Let's make it expand at constant speed. say 500px/s.
         const speed = 0.5; // px/ms
-        const time = maxRadius / speed;
+        const time = Math.max(200, maxRadius / speed); // minimum 200ms
 
         this.tweens.addCounter({
             from: 0,
@@ -453,13 +448,13 @@ export class BattleScene extends Phaser.Scene {
             onUpdate: (tween) => {
                 const r = tween.getValue();
                 graphics.clear();
-                graphics.lineStyle(2, color, 1 - (r / maxRadius)); 
+                graphics.lineStyle(2, color, 1 - (r / maxRadius));
                 graphics.strokeCircle(x, y, r);
             },
             onComplete: () => {
                 graphics.destroy();
-                if (enemyHit) {
-                    // Flash Enemy Green
+                if (enemyAlive) {
+                    // Flash Enemy Green to indicate detected
                     enemySprite.tint = 0x00FF00;
                     this.time.delayedCall(150, () => {
                         enemySprite.tint = 0xFFFFFF;
