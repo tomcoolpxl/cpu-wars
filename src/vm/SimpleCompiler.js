@@ -4,6 +4,7 @@ export class SimpleCompiler {
     constructor() {
         this.labelCount = 0;
         this.output = [];
+        this.MAX_DEPTH = 3;
     }
 
     compile(source) {
@@ -18,6 +19,13 @@ export class SimpleCompiler {
 
         lines.forEach((line) => {
             try {
+                // Check nesting depth
+                if (['if ', 'while ', 'repeat '].some(k => line.startsWith(k))) {
+                    if (contextStack.length >= this.MAX_DEPTH) {
+                        throw new Error(`Nesting limit exceeded (Max ${this.MAX_DEPTH})`);
+                    }
+                }
+
                 // 1. Assignments
                 if (line.includes('=') && !line.startsWith('if') && !line.startsWith('while')) {
                     this.parseAssignment(line);

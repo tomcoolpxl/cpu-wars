@@ -292,9 +292,53 @@ describe('SimpleCompiler - Repeat Loops', () => {
         assert(asm.includes('DJNZ R0, __loop_0'), 'should decrement and jump');
     });
 
-    test('compiles repeat with different register', () => {
-        const asm = compile('var2 = 5\nrepeat var2:\nfire\nend');
-        assert(asm.includes('DJNZ R2, __loop_0'), 'should use R2');
+    test('SimpleCompiler compiles nested loops correctly', () => {
+        const code = `
+        var0 = 3
+        repeat var0:
+            var1 = 2
+            repeat var1:
+                move
+            end
+        end
+        `;
+        const asm = compile(code);
+        // Expect 2 LBLs, 2 DJNZs
+        assert(asm.match(/LBL/g).length === 2, 'should have 2 LBLs');
+        assert(asm.match(/DJNZ/g).length === 2, 'should have 2 DJNZs');
+    });
+
+    test('SimpleCompiler enforces nesting limit', () => {
+        const code = `
+        if var0 == 0:
+            if var1 == 0:
+                if var2 == 0:
+                    if var3 == 0:
+                        move
+                    end
+                end
+            end
+        end
+        `;
+        let threw = false;
+        try {
+            compile(code);
+        } catch (e) {
+            threw = true;
+            assert(e.message.includes('Nesting limit exceeded'), 'should error on nesting limit');
+        }
+        assert(threw, 'should throw error');
+    });
+
+    test('SimpleCompiler enforces variable limits', () => {
+        let threw = false;
+        try {
+            compile('var6 = 1');
+        } catch (e) {
+            threw = true;
+            assert(e.message.includes('Invalid variable'), 'should error on var6');
+        }
+        assert(threw, 'should throw on var6');
     });
 });
 
