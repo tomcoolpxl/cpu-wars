@@ -69,7 +69,15 @@ export class SimpleCompiler {
                     return;
                 }
 
-                // 5. Control Flow: WHILE
+                // 5. Control Flow: LOOP (Infinite)
+                if (line === 'loop:') {
+                    const startLabel = `__inf_loop_${this.labelCount++}`;
+                    this.emit(`LBL ${startLabel}`);
+                    contextStack.push({ type: 'loop', label: startLabel });
+                    return;
+                }
+
+                // 6. Control Flow: WHILE
                 if (line.startsWith('while ')) {
                     const startLabel = `__while_start_${this.labelCount}`;
                     const endLabel = `__while_end_${this.labelCount}`;
@@ -112,6 +120,9 @@ export class SimpleCompiler {
 
                     if (ctx.type === 'repeat') {
                         this.emit(`DJNZ ${ctx.reg}, ${ctx.label}`);
+                    }
+                    else if (ctx.type === 'loop') {
+                        this.emit(`JMP ${ctx.label}`);
                     }
                     else if (ctx.type === 'while') {
                         this.emit(`JMP ${ctx.start}`);

@@ -348,6 +348,12 @@ describe('SimpleCompiler - Repeat Loops', () => {
         }
         assert(threw, 'should throw on register collision');
     });
+
+    test('SimpleCompiler compiles infinite loop construct', () => {
+        const asm = compile('loop:\nmove\nend');
+        assert(asm.includes('LBL __inf_loop_0'), 'should have start label');
+        assert(asm.includes('JMP __inf_loop_0'), 'should jump back to start');
+    });
 });
 
 describe('CPU - Read-Only Register Protection', () => {
