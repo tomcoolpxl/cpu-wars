@@ -90,6 +90,8 @@
         button:hover { background: #555; }
         .btn-compile { background: #2a4a2a; }
         .btn-compile:hover { background: #3a6a3a; }
+        .btn-run.active { background: #080; box-shadow: 0 0 10px #0f0; }
+        .btn-fast.active { background: #a80; box-shadow: 0 0 10px #fa0; }
         .btn-halt.active { background: #a00; box-shadow: 0 0 10px #f00; }
         .controls { display: flex; gap: 10px; margin-bottom: 10px; }
 
@@ -230,7 +232,7 @@
         .modal-close { float: right; cursor: pointer; color: #888; font-size: 18px; }
         .modal-close:hover { color: #fff; }
     </style>
-  <script type="module" crossorigin src="./assets/index-92CS8G1S.js"></script>
+  <script type="module" crossorigin src="./assets/index-DOn4JV_p.js"></script>
 </head>
 <body>
     <div id="app">
@@ -398,10 +400,10 @@
                     <option value="2">Level 2: The Obstacle</option>
                     <option value="3">Level 3: Minefield</option>
                 </select>
-                <button id="btn-run">RUN</button>
+                <button id="btn-run" class="btn-run">RUN</button>
                 <button id="btn-stop" class="btn-halt">HALT</button>
                 <button id="btn-step">STEP</button>
-                <button id="btn-ff">FAST</button>
+                <button id="btn-ff" class="btn-fast">FAST</button>
                 <button id="btn-reset">RESET</button>
             </div>
             <div id="status-log"></div>
