@@ -97,3 +97,21 @@ The test file contains helpers:
 - `src/vm/SimpleCompiler.js` - TankScript to Assembly compiler
 - `src/simulation/BattleManager.js` - Turn resolution, state management, referee logic
 - `src/simulation/Grid.js` - 16×10 arena, raycast for SCAN, collision detection
+- `src/constants.js` - Shared constants (TANK_IDS)
+
+## Editor Modes
+
+The UI supports two editing modes per player:
+
+- **TankScript Mode (default):** High-level language with `if/while/repeat` control structures
+- **Assembly Mode:** Direct assembly editing with line numbers and PC highlighting during execution
+
+Toggle between modes using the ASM/TankScript buttons. In Assembly mode, the COMPILE button becomes VALIDATE.
+
+## Built-in Strategies
+
+Available from the Load dropdown:
+- `Simple Scout` - Move forward, scan, fire when enemy detected
+- `Simple Chaser` - Use ping to chase enemy position
+- `Hunter` - Advanced ping/scan combo with directional hunting
+- `Stalker` - Aggressive tracking and firing

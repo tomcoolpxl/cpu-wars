@@ -9,13 +9,14 @@ import { BattleManager, TANK_IDS } from './simulation/BattleManager.js';
 const config = {
     type: Phaser.AUTO,
     width: 640,
-    height: 400,
+    height: 440,  // Extra 40px for title at top
     parent: 'game-container',
     backgroundColor: '#000000',
     pixelArt: true,
     scale: {
         mode: Phaser.Scale.FIT,
-        autoCenter: Phaser.Scale.CENTER_BOTH
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        parent: 'game-container'
     },
     scene: [BattleScene]
 };
@@ -45,9 +46,22 @@ const viewerP2 = document.getElementById('p2-viewer');
 const machineP1 = document.getElementById('p1-machine');
 const machineP2 = document.getElementById('p2-machine');
 
-// Checkboxes
-const chkRawP1 = document.getElementById('p1-raw-asm');
-const chkRawP2 = document.getElementById('p2-raw-asm');
+// Assembly editor wrappers and components
+const asmWrapperP1 = document.getElementById('p1-asm-wrapper');
+const asmWrapperP2 = document.getElementById('p2-asm-wrapper');
+const asmEditorP1 = document.getElementById('p1-asm-editor');
+const asmEditorP2 = document.getElementById('p2-asm-editor');
+const asmLinesP1 = document.getElementById('p1-asm-lines');
+const asmLinesP2 = document.getElementById('p2-asm-lines');
+const asmHighlightP1 = document.getElementById('p1-asm-highlight');
+const asmHighlightP2 = document.getElementById('p2-asm-highlight');
+
+// Script panels (for disabling in assembly mode)
+const scriptPanelP1 = document.getElementById('p1-script-panel');
+const scriptPanelP2 = document.getElementById('p2-script-panel');
+
+// Editor mode state: 'tankscript' or 'assembly' per player
+const editorModes = { p1: 'tankscript', p2: 'tankscript' };
 
 // Compiler & Parser
 const compiler = new SimpleCompiler();
@@ -324,13 +338,286 @@ loop:
 end`
 };
 
-// Initial Load
-scriptP1.value = STRATEGIES.HUNTER;
-scriptP2.value = STRATEGIES.STALKER;
+// Simple starter scripts for beginners - also add to STRATEGIES
+STRATEGIES.SIMPLE_SCOUT = `# Simple Scout - Patrol and Fire
+# Scans ahead, fires if enemy, otherwise patrols
+
+loop:
+  # First check if enemy is ahead
+  scan(var0, var1)
+
+  if var1 == 2:
+    fire
+  else:
+    # No enemy ahead - ping to find them
+    ping(var2, var3)
+
+    # Try to align with enemy
+    if posx < var2:
+      # Enemy is to the East
+      if dir == 0:
+        move
+      else:
+        turn_right
+      end
+    else:
+      if posx > var2:
+        # Enemy is to the West
+        if dir == 2:
+          move
+        else:
+          turn_left
+        end
+      else:
+        # Same X - check Y
+        if posy < var3:
+          # Enemy is South
+          if dir == 1:
+            scan(var0, var1)
+            if var1 == 2:
+              fire
+            else:
+              move
+            end
+          else:
+            turn_right
+          end
+        else:
+          if posy > var3:
+            # Enemy is North
+            if dir == 3:
+              scan(var0, var1)
+              if var1 == 2:
+                fire
+              else:
+                move
+              end
+            else:
+              turn_left
+            end
+          else:
+            # On same spot? Spin and fire
+            turn_right
+          end
+        end
+      end
+    end
+  end
+end`;
+
+STRATEGIES.SIMPLE_CHASER = `# Simple Chaser
+# Uses ping to find and chase enemy
+
+loop:
+  # Ping to find enemy position
+  ping(var0, var1)
+
+  # Move towards enemy X position first
+  if posx < var0:
+    # Enemy is East
+    if dir == 0:
+      scan(var2, var3)
+      if var3 == 2:
+        fire
+      else:
+        move
+      end
+    else:
+      turn_right
+    end
+  else:
+    if posx > var0:
+      # Enemy is West
+      if dir == 2:
+        scan(var2, var3)
+        if var3 == 2:
+          fire
+        else:
+          move
+        end
+      else:
+        turn_left
+      end
+    else:
+      # Same X - align Y
+      if posy < var1:
+        # Enemy is South
+        if dir == 1:
+          scan(var2, var3)
+          if var3 == 2:
+            fire
+          else:
+            move
+          end
+        else:
+          turn_right
+        end
+      else:
+        if posy > var1:
+          # Enemy is North
+          if dir == 3:
+            scan(var2, var3)
+            if var3 == 2:
+              fire
+            else:
+              move
+            end
+          else:
+            turn_left
+          end
+        else:
+          # Same position - spin!
+          turn_right
+        end
+      end
+    end
+  end
+end`;
+
+// Initial Load - use simple scripts by default
+scriptP1.value = STRATEGIES.SIMPLE_SCOUT;
+scriptP2.value = STRATEGIES.SIMPLE_CHASER;
 
 // Strategy Selectors
-selP1.addEventListener('change', () => { if (STRATEGIES[selP1.value]) scriptP1.value = STRATEGIES[selP1.value]; });
-selP2.addEventListener('change', () => { if (STRATEGIES[selP2.value]) scriptP2.value = STRATEGIES[selP2.value]; });
+selP1.addEventListener('change', () => {
+    if (STRATEGIES[selP1.value]) {
+        scriptP1.value = STRATEGIES[selP1.value];
+        // If in assembly mode, auto-compile to populate asm editor
+        if (editorModes.p1 === 'assembly') {
+            try {
+                asmEditorP1.value = compiler.compile(scriptP1.value);
+            } catch (e) {
+                asmEditorP1.value = '; Compilation failed\nNOP';
+            }
+            updateAsmLineNumbers('p1');
+        }
+    }
+});
+selP2.addEventListener('change', () => {
+    if (STRATEGIES[selP2.value]) {
+        scriptP2.value = STRATEGIES[selP2.value];
+        // If in assembly mode, auto-compile to populate asm editor
+        if (editorModes.p2 === 'assembly') {
+            try {
+                asmEditorP2.value = compiler.compile(scriptP2.value);
+            } catch (e) {
+                asmEditorP2.value = '; Compilation failed\nNOP';
+            }
+            updateAsmLineNumbers('p2');
+        }
+    }
+});
+
+// --- Line Number Updates for ASM Editor ---
+function updateAsmLineNumbers(prefix) {
+    const asmEditor = prefix === 'p1' ? asmEditorP1 : asmEditorP2;
+    const asmLines = prefix === 'p1' ? asmLinesP1 : asmLinesP2;
+
+    const lines = asmEditor.value.split('\n');
+    let html = '';
+    for (let i = 0; i < lines.length; i++) {
+        html += `<span class="ln" data-line="${i}">${(i).toString(16).padStart(2, '0').toUpperCase()}</span>`;
+    }
+    asmLines.innerHTML = html;
+}
+
+function syncAsmScroll(prefix) {
+    const asmEditor = prefix === 'p1' ? asmEditorP1 : asmEditorP2;
+    const asmLines = prefix === 'p1' ? asmLinesP1 : asmLinesP2;
+    asmLines.scrollTop = asmEditor.scrollTop;
+}
+
+// Highlight PC line in ASM editor (assembly mode)
+function updateAsmPCHighlight(prefix, pc) {
+    const asmWrapper = prefix === 'p1' ? asmWrapperP1 : asmWrapperP2;
+    const asmHighlight = prefix === 'p1' ? asmHighlightP1 : asmHighlightP2;
+    const asmLines = prefix === 'p1' ? asmLinesP1 : asmLinesP2;
+    const asmEditor = prefix === 'p1' ? asmEditorP1 : asmEditorP2;
+
+    if (editorModes[prefix] !== 'assembly') {
+        asmHighlight.style.display = 'none';
+        return;
+    }
+
+    const lineHeight = 15;
+    const paddingTop = 5;
+    const scrollTop = asmEditor.scrollTop;
+    const topPos = paddingTop + (pc * lineHeight) - scrollTop;
+
+    // Only show if line is visible
+    if (topPos >= 0 && topPos < asmWrapper.clientHeight - lineHeight) {
+        asmHighlight.style.display = 'block';
+        asmHighlight.style.top = topPos + 'px';
+    } else {
+        asmHighlight.style.display = 'none';
+    }
+
+    // Highlight line number
+    const allLns = asmLines.querySelectorAll('.ln');
+    allLns.forEach(ln => ln.classList.remove('active'));
+    const activeLn = asmLines.querySelector(`.ln[data-line="${pc}"]`);
+    if (activeLn) activeLn.classList.add('active');
+}
+
+// --- Editor Mode Switching ---
+function setEditorMode(player, mode) {
+    const prefix = player; // 'p1' or 'p2'
+    editorModes[prefix] = mode;
+
+    const scriptPanel = prefix === 'p1' ? scriptPanelP1 : scriptPanelP2;
+    const asmViewer = prefix === 'p1' ? viewerP1 : viewerP2;
+    const asmWrapper = prefix === 'p1' ? asmWrapperP1 : asmWrapperP2;
+    const asmEditor = prefix === 'p1' ? asmEditorP1 : asmEditorP2;
+    const compileBtn = prefix === 'p1' ? btnCompileP1 : btnCompileP2;
+    const scriptEl = prefix === 'p1' ? scriptP1 : scriptP2;
+    const modeBtns = document.querySelectorAll(`#${prefix}-mode-toggle .mode-btn`);
+
+    // Update toggle button states
+    modeBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+
+    if (mode === 'assembly') {
+        // Switch to assembly mode
+        scriptPanel.classList.add('panel-disabled');
+        asmViewer.style.display = 'none';
+        asmWrapper.style.display = 'flex';
+        compileBtn.textContent = 'VALIDATE';
+
+        // Auto-compile TankScript and populate assembler
+        try {
+            const asm = compiler.compile(scriptEl.value);
+            asmEditor.value = asm;
+        } catch (e) {
+            asmEditor.value = '; Compilation failed - write assembly here\n; Error: ' + e.message + '\nNOP';
+        }
+        updateAsmLineNumbers(prefix);
+    } else {
+        // Switch to TankScript mode
+        scriptPanel.classList.remove('panel-disabled');
+        asmViewer.style.display = 'block';
+        asmWrapper.style.display = 'none';
+        compileBtn.textContent = 'COMPILE';
+    }
+}
+
+// Mode toggle event listeners
+document.querySelectorAll('.mode-toggle .mode-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        const toggle = e.target.closest('.mode-toggle');
+        const player = toggle.id.replace('-mode-toggle', ''); // 'p1' or 'p2'
+        const mode = e.target.dataset.mode;
+        if (editorModes[player] !== mode) {
+            setEditorMode(player, mode);
+        }
+    });
+});
+
+// ASM editor input/scroll listeners for line number sync
+asmEditorP1.addEventListener('input', () => updateAsmLineNumbers('p1'));
+asmEditorP1.addEventListener('scroll', () => syncAsmScroll('p1'));
+asmEditorP2.addEventListener('input', () => updateAsmLineNumbers('p2'));
+asmEditorP2.addEventListener('scroll', () => syncAsmScroll('p2'));
 
 // UI Updater
 const REGISTERS = ['PC', 'ACC', 'CMP', 'R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'PX', 'PY', 'DIR', 'HP', 'AMMO'];
@@ -346,23 +633,35 @@ function clearError(prefix) {
     if (el) { el.style.display = 'none'; el.textContent = ''; }
 }
 
-// Compile a single player's script
-function compilePlayer(prefix, scriptEl, viewerEl, machineEl, isRaw) {
+// Compile a single player's script (handles both TankScript and Assembly modes)
+function compilePlayer(prefix, scriptEl, viewerEl, machineEl) {
     clearError(prefix);
+    const mode = editorModes[prefix.toLowerCase()];
+    const asmEditor = prefix.toLowerCase() === 'p1' ? asmEditorP1 : asmEditorP2;
+
     try {
-        let asm = scriptEl.value;
-        if (!isRaw) {
+        let asm;
+
+        if (mode === 'assembly') {
+            // Assembly mode: read directly from asm editor
+            asm = asmEditor.value;
+        } else {
+            // TankScript mode: compile first
             asm = compiler.compile(scriptEl.value);
         }
-        
+
         const tokens = tokenizer.tokenize(asm);
         const { program, labels, error } = parser.parse(tokens);
         if (error) throw new Error(error);
+
+        // Always update viewers (in tankscript mode, show compiled; in asm mode, show parsed)
         renderAssembly(viewerEl, program);
         renderMachineCode(machineEl, program);
+
         return { asm, program, labels };
     } catch (e) {
-        showError(prefix, `Compile Error: ${e.message}`);
+        const errorType = mode === 'assembly' ? 'Parse' : 'Compile';
+        showError(prefix, `${errorType} Error: ${e.message}`);
         return null;
     }
 }
@@ -450,7 +749,7 @@ function stopSimulation() {
 
 // Compile button handlers
 btnCompileP1.addEventListener('click', () => {
-    const res = compilePlayer('P1', scriptP1, viewerP1, machineP1, chkRawP1 ? chkRawP1.checked : false);
+    const res = compilePlayer('P1', scriptP1, viewerP1, machineP1);
     if (res) {
         btnCompileP1.textContent = "OK!";
         setTimeout(() => btnCompileP1.textContent = "COMPILE", 1000);
@@ -458,7 +757,7 @@ btnCompileP1.addEventListener('click', () => {
 });
 
 btnCompileP2.addEventListener('click', () => {
-    const res = compilePlayer('P2', scriptP2, viewerP2, machineP2, chkRawP2 ? chkRawP2.checked : false);
+    const res = compilePlayer('P2', scriptP2, viewerP2, machineP2);
     if (res) {
         btnCompileP2.textContent = "OK!";
         setTimeout(() => btnCompileP2.textContent = "COMPILE", 1000);
@@ -469,26 +768,32 @@ btnCompileP2.addEventListener('click', () => {
 btnRun.addEventListener('click', () => {
     if (simulationRunning && !isFastForward) return;
 
-    const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1, chkRawP1 ? chkRawP1.checked : false);
-    const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2, chkRawP2 ? chkRawP2.checked : false);
-    if (!p1 || !p2) return;
+    // Check if we can continue from current state (both CPUs have code loaded)
+    const hasLoadedCode = battleManager.tanks.P1.cpu && battleManager.tanks.P2.cpu;
 
-    // Always reload code on RUN to ensure latest version
-    const res = battleManager.loadCode(p1.asm, p2.asm);
-    if (!res.success) { showError('P1', res.error); return; }
+    if (!hasLoadedCode) {
+        // No code loaded - compile and load fresh
+        const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1);
+        const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2);
+        if (!p1 || !p2) return;
 
-    // Send walls and initial tank state to view
-    const level = parseInt(levelSelect.value);
-    window.dispatchEvent(new CustomEvent('run-sim', {
-        detail: {
-            level,
-            walls: Array.from(battleManager.grid.walls),
-            tanks: {
-                P1: { x: battleManager.tanks.P1.x, y: battleManager.tanks.P1.y, facing: battleManager.tanks.P1.facing },
-                P2: { x: battleManager.tanks.P2.x, y: battleManager.tanks.P2.y, facing: battleManager.tanks.P2.facing }
+        const res = battleManager.loadCode(p1.asm, p2.asm);
+        if (!res.success) { showError('P1', res.error); return; }
+
+        // Send walls and initial tank state to view
+        const level = parseInt(levelSelect.value);
+        window.dispatchEvent(new CustomEvent('run-sim', {
+            detail: {
+                level,
+                walls: Array.from(battleManager.grid.walls),
+                tanks: {
+                    P1: { x: battleManager.tanks.P1.x, y: battleManager.tanks.P1.y, facing: battleManager.tanks.P1.facing },
+                    P2: { x: battleManager.tanks.P2.x, y: battleManager.tanks.P2.y, facing: battleManager.tanks.P2.facing }
+                }
             }
-        }
-    }));
+        }));
+    }
+    // If code was already loaded (e.g., HALTED state), just continue without reloading
 
     isFastForward = false;
     startSimulationLoop();
@@ -503,8 +808,8 @@ btnStep.addEventListener('click', () => {
     
     // Lazy compile/load if CPUs missing
     if (!battleManager.tanks.P1.cpu) {
-         const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1, chkRawP1 ? chkRawP1.checked : false);
-         const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2, chkRawP2 ? chkRawP2.checked : false);
+         const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1);
+         const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2);
          if (!p1 || !p2) return;
          battleManager.loadCode(p1.asm, p2.asm);
     }
@@ -531,8 +836,8 @@ btnFf.addEventListener('click', () => {
     
     // Lazy compile/load
     if (!battleManager.tanks.P1.cpu) {
-         const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1, chkRawP1 ? chkRawP1.checked : false);
-         const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2, chkRawP2 ? chkRawP2.checked : false);
+         const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1);
+         const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2);
          if (!p1 || !p2) return;
          battleManager.loadCode(p1.asm, p2.asm);
     }
@@ -545,8 +850,8 @@ btnReset.addEventListener('click', () => {
     const level = parseInt(levelSelect.value);
     battleManager.setupArena(level);
     battleManager.resetTurnState();
-    const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1, chkRawP1 ? chkRawP1.checked : false);
-    const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2, chkRawP2 ? chkRawP2.checked : false);
+    const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1);
+    const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2);
     if (p1 && p2) battleManager.loadCode(p1.asm, p2.asm);
     updateUIState(battleManager.getState());
     // Send walls and initial tank state to view
@@ -634,7 +939,7 @@ function updateCPU(prefix, tankData) {
     const pyEl = document.getElementById(`${prefix}-PY`); if(pyEl) pyEl.textContent = regs['PY'];
     const dirEl = document.getElementById(`${prefix}-DIR`); 
     if(dirEl) { const dirNames = ['E', 'S', 'W', 'N']; dirEl.textContent = dirNames[regs['DIR']] || regs['DIR']; }
-    const hpEl = document.getElementById(`${prefix}-HP`); if(hpEl) hpEl.textContent = regs['HP'];
+    const hpEl = document.getElementById(`${prefix}-HP`); if(hpEl) hpEl.textContent = tankData.hp;
     const ammoEl = document.getElementById(`${prefix}-AMMO`); if(ammoEl) ammoEl.textContent = regs['AMMO'];
     ['PC', 'ACC', 'CMP', 'R0', 'R1', 'R2', 'R3', 'R4', 'R5'].forEach(reg => {
         const val = regs[reg];
@@ -663,4 +968,7 @@ function updateCPU(prefix, tankData) {
     if (oldActiveMachine) oldActiveMachine.classList.remove('active');
     const newActiveMachine = document.getElementById(`${prefix}-machine-line-${highlightPC}`);
     if (newActiveMachine) { newActiveMachine.classList.add('active'); newActiveMachine.scrollIntoView({ block: 'nearest' }); }
+
+    // Update ASM editor PC highlight (assembly mode)
+    updateAsmPCHighlight(prefix, highlightPC);
 }

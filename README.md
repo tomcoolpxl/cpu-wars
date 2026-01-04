@@ -13,24 +13,20 @@
 3. **Battle:** Hit **RUN**. Your code executes on a custom Virtual Machine (VM) against an opponent.
 4. **Win:** Destroy the enemy tank (3 hits) to win the round.
 
-### Example TankScript (Hunter Strategy)
+### Example TankScript
 
 ```python
-var5 = 0
-while var5 == var5:  # Infinite Loop
-  ping(var0, var1)   # Get enemy position into var0 (x), var1 (y)
-  
-  # Move towards enemy
-  if posx < var0:
-    if dir != 0:     # If not facing East
+# Simple Scout - Move and Fire
+loop:
+  scan(var0, var1)   # Scan ahead for enemies
+
+  if var1 == 2:      # 2 = Enemy detected
+    fire
+  else:
+    if var1 == 1:    # 1 = Wall ahead
       turn_right
     else:
-      move
-    end
-  else:
-    scan(var2, var3) # Check for enemy
-    if var3 == 2:    # 2 = Enemy
-      fire
+      move           # Clear path
     end
   end
 end
@@ -99,4 +95,4 @@ npm run deploy
 
 ## Documentation
 
-* **[AGENTS.md](AGENTS.md):** Information about the AI agents assisting in development.
+* **[CLAUDE.md](CLAUDE.md):** Developer reference for AI assistants and contributors.

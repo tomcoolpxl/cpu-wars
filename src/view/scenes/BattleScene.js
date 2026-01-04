@@ -9,6 +9,7 @@ export class BattleScene extends Phaser.Scene {
         this.gridWidth = 16;
         this.gridHeight = 10;
         this.tileSize = 40;
+        this.titleHeight = 40; // Space for title at top
         this.canvasWidth = this.gridWidth * this.tileSize;  // 640
         this.canvasHeight = this.gridHeight * this.tileSize; // 400
         this.tickDuration = 500; // ms
@@ -41,28 +42,95 @@ export class BattleScene extends Phaser.Scene {
     }
 
     create() {
+        // Draw "CPU WARS" title with retro green line style
+        this.drawTitle();
+
+        // Draw grid (offset by titleHeight)
         const gridGraphics = this.add.graphics();
         gridGraphics.lineStyle(1, 0x333333);
         for (let x = 0; x <= this.gridWidth; x++) {
-            gridGraphics.moveTo(x * this.tileSize, 0);
-            gridGraphics.lineTo(x * this.tileSize, this.canvasHeight);
+            gridGraphics.moveTo(x * this.tileSize, this.titleHeight);
+            gridGraphics.lineTo(x * this.tileSize, this.titleHeight + this.canvasHeight);
         }
         for (let y = 0; y <= this.gridHeight; y++) {
-            gridGraphics.moveTo(0, y * this.tileSize);
-            gridGraphics.lineTo(this.canvasWidth, y * this.tileSize);
+            gridGraphics.moveTo(0, this.titleHeight + y * this.tileSize);
+            gridGraphics.lineTo(this.canvasWidth, this.titleHeight + y * this.tileSize);
         }
         gridGraphics.strokePath();
 
         this.createEntities();
-        
+
         window.addEventListener('run-sim', (e) => this.startSimulation(e.detail));
         window.addEventListener('reset-sim', (e) => this.resetSimulation(e.detail));
         window.addEventListener('update-ui', (e) => this.renderState(e.detail));
 
-        this.uiInfo = this.add.text(10, 10, 'Actions: 0 | CPU Ticks: 0', { font: '14px monospace', fill: '#ffffff' });
-        this.uiP1 = this.add.text(this.canvasWidth - 140, 10, 'P1: 3HP', { font: '14px monospace', fill: '#0088ff' }).setOrigin(1, 0);
-        this.uiP2 = this.add.text(this.canvasWidth - 10, 10, 'P2: 3HP', { font: '14px monospace', fill: '#ff4444' }).setOrigin(1, 0);
-        this.uiGameOver = this.add.text(320, 10, '', { font: 'bold 16px monospace', fill: '#ffff00' }).setOrigin(0.5, 0);
+        // UI text at bottom of grid area
+        const bottomY = this.titleHeight + this.canvasHeight - 25;
+        this.uiInfo = this.add.text(10, bottomY, 'Actions: 0', { font: '12px monospace', fill: '#888888' });
+        this.uiP1 = this.add.text(this.canvasWidth - 130, bottomY, 'P1: 3HP', { font: '12px monospace', fill: '#0088ff' }).setOrigin(1, 0);
+        this.uiP2 = this.add.text(this.canvasWidth - 10, bottomY, 'P2: 3HP', { font: '12px monospace', fill: '#ff4444' }).setOrigin(1, 0);
+        this.uiGameOver = this.add.text(320, this.titleHeight + this.canvasHeight / 2, '', { font: 'bold 20px monospace', fill: '#ffff00' }).setOrigin(0.5, 0.5);
+    }
+
+    drawTitle() {
+        // Draw "CPU WARS" in retro Star Wars style with green lines
+        const g = this.add.graphics();
+        g.lineStyle(2, 0x00ff00); // Green lines
+
+        const startX = 200;
+        const y = 20;
+        const scale = 0.8;
+
+        // Simple blocky letters - C P U   W A R S
+        // C
+        this.drawLetter(g, startX, y, scale, [
+            [[10, 0], [0, 0], [0, 20], [10, 20]],
+        ]);
+        // P
+        this.drawLetter(g, startX + 20 * scale, y, scale, [
+            [[0, 0], [0, 20]],
+            [[0, 0], [10, 0], [10, 10], [0, 10]],
+        ]);
+        // U
+        this.drawLetter(g, startX + 40 * scale, y, scale, [
+            [[0, 0], [0, 20], [10, 20], [10, 0]],
+        ]);
+
+        // Space
+        const warsX = startX + 80 * scale;
+
+        // W
+        this.drawLetter(g, warsX, y, scale, [
+            [[0, 0], [2, 20], [5, 10], [8, 20], [10, 0]],
+        ]);
+        // A
+        this.drawLetter(g, warsX + 20 * scale, y, scale, [
+            [[0, 20], [5, 0], [10, 20]],
+            [[2, 12], [8, 12]],
+        ]);
+        // R
+        this.drawLetter(g, warsX + 40 * scale, y, scale, [
+            [[0, 0], [0, 20]],
+            [[0, 0], [10, 0], [10, 10], [0, 10]],
+            [[5, 10], [10, 20]],
+        ]);
+        // S
+        this.drawLetter(g, warsX + 60 * scale, y, scale, [
+            [[10, 0], [0, 0], [0, 10], [10, 10], [10, 20], [0, 20]],
+        ]);
+    }
+
+    drawLetter(g, x, y, scale, paths) {
+        paths.forEach(path => {
+            g.beginPath();
+            path.forEach((point, i) => {
+                const px = x + point[0] * scale;
+                const py = y + point[1] * scale;
+                if (i === 0) g.moveTo(px, py);
+                else g.lineTo(px, py);
+            });
+            g.strokePath();
+        });
     }
 
     createEntities() {
@@ -80,8 +148,8 @@ export class BattleScene extends Phaser.Scene {
         const p2Data = this.initialTanks.P2;
         const halfTile = this.tileSize / 2;
 
-        this.tankSprites[TANK_IDS.P1] = this.add.sprite(p1Data.x * this.tileSize + halfTile, p1Data.y * this.tileSize + halfTile, 'tank_p1').setOrigin(0.5).setAngle(p1Data.facing * 90);
-        this.tankSprites[TANK_IDS.P2] = this.add.sprite(p2Data.x * this.tileSize + halfTile, p2Data.y * this.tileSize + halfTile, 'tank_p2').setOrigin(0.5).setAngle(p2Data.facing * 90);
+        this.tankSprites[TANK_IDS.P1] = this.add.sprite(p1Data.x * this.tileSize + halfTile, this.titleHeight + p1Data.y * this.tileSize + halfTile, 'tank_p1').setOrigin(0.5).setAngle(p1Data.facing * 90);
+        this.tankSprites[TANK_IDS.P2] = this.add.sprite(p2Data.x * this.tileSize + halfTile, this.titleHeight + p2Data.y * this.tileSize + halfTile, 'tank_p2').setOrigin(0.5).setAngle(p2Data.facing * 90);
     }
 
     drawWalls() {
@@ -92,7 +160,7 @@ export class BattleScene extends Phaser.Scene {
         const halfTile = this.tileSize / 2;
         this.walls.forEach(key => {
             const [x, y] = key.split(',').map(Number);
-            const sprite = this.add.image(x * this.tileSize + halfTile, y * this.tileSize + halfTile, 'wall');
+            const sprite = this.add.image(x * this.tileSize + halfTile, this.titleHeight + y * this.tileSize + halfTile, 'wall');
             this.wallSprites.push(sprite);
         });
     }
@@ -158,7 +226,7 @@ export class BattleScene extends Phaser.Scene {
         bullets.forEach(b => {
             currentIds.add(b.id);
             const targetX = b.x * this.tileSize + halfTile;
-            const targetY = b.y * this.tileSize + halfTile;
+            const targetY = this.titleHeight + b.y * this.tileSize + halfTile;
 
             if (this.bulletSprites[b.id]) {
                 const sprite = this.bulletSprites[b.id];
@@ -202,7 +270,7 @@ export class BattleScene extends Phaser.Scene {
 
         const halfTile = this.tileSize / 2;
         const targetX = data.x * this.tileSize + halfTile;
-        const targetY = data.y * this.tileSize + halfTile;
+        const targetY = this.titleHeight + data.y * this.tileSize + halfTile;
         const targetAngle = data.facing * 90;
 
         if (sprite.targetX !== targetX || sprite.targetY !== targetY || sprite.targetAngle !== targetAngle) {
@@ -225,7 +293,7 @@ export class BattleScene extends Phaser.Scene {
     triggerExplosion(gx, gy, ownerId, hitTankId) {
         const halfTile = this.tileSize / 2;
         const cx = gx * this.tileSize + halfTile;
-        const cy = gy * this.tileSize + halfTile;
+        const cy = this.titleHeight + gy * this.tileSize + halfTile;
         
         // Flash Hit Tank
         if (hitTankId && this.tankSprites[hitTankId]) {
@@ -282,7 +350,7 @@ export class BattleScene extends Phaser.Scene {
         if (ex !== -1 && ey !== -1) {
             const halfTile = this.tileSize / 2;
             const enemyX = ex * this.tileSize + halfTile;
-            const enemyY = ey * this.tileSize + halfTile;
+            const enemyY = this.titleHeight + ey * this.tileSize + halfTile;
             targetRadius = Phaser.Math.Distance.Between(x, y, enemyX, enemyY);
             found = true;
         }
