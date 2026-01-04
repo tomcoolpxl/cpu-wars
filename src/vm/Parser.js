@@ -1,4 +1,7 @@
-import { OPCODES, INSTRUCTION_SPECS, ARG_TYPES, TOKEN_TYPES } from './InstructionSet.js';
+import { OPCODES, INSTRUCTION_SPECS, ARG_TYPES, TOKEN_TYPES, REGISTERS } from './InstructionSet.js';
+
+// Reserved words that cannot be used as labels (includes all register names)
+const RESERVED_LABELS = Object.values(REGISTERS);
 
 export class Parser {
     constructor() {
@@ -71,9 +74,21 @@ export class Parser {
                     currentTokenIndex++;
                 }
 
+                // Check for extra arguments (comma followed by more tokens on same line)
+                if (currentTokenIndex < tokens.length) {
+                    const nextToken = tokens[currentTokenIndex];
+                    if (nextToken.type === TOKEN_TYPES.COMMA) {
+                        throw new Error(`Line ${token.line}: Too many arguments for '${opcode}'. Expected ${spec.length}.`);
+                    }
+                }
+
                 // Special Case: LABEL definition
                 if (opcode === OPCODES.LBL) {
                     const labelName = args[0];
+                    // Check for reserved names (register names)
+                    if (RESERVED_LABELS.includes(labelName)) {
+                        throw new Error(`Line ${token.line}: Label name '${labelName}' is reserved (register name).`);
+                    }
                     if (this.labels[labelName] !== undefined) {
                         throw new Error(`Line ${token.line}: Duplicate label '${labelName}'.`);
                     }

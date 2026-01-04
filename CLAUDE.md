@@ -65,17 +65,34 @@ Execution
 
 ## VM Constraints
 
+- **Registers:** All 8-bit unsigned (0-255) with wrapping arithmetic
 - **MAX_OPS:** 50 instructions per tick (prevents infinite loops)
+- **MAX_TURNS:** 1000 turns (prevents infinite games)
 - **MAX_NESTING:** Enforced by compiler for control structures
-- **Variables:** Only `var0-var5` allowed
+- **Variables:** Only `var0-var5` allowed (maps to R0-R5)
 - **Read-only registers:** `PX`, `PY`, `DIR`, `HP`, `AMMO`
+
+## Register Behavior
+
+- **Overflow:** `255 + 1 = 0` (wraps around)
+- **Underflow:** `0 - 1 = 255` (wraps around)
+- **CMP:** Stores 0 (equal), 1 (greater), or 255 (-1 for less)
+- **DJNZ:** Does not decrement if already 0 (prevents infinite loops)
 
 ## Instruction Categories
 
 - **Actions (end turn):** `MOV_F`, `MOV_B`, `ROT_L`, `ROT_R`, `FIRE`, `NOP`
-- **Sensors (end turn):** `SCAN`, `PING`
+- **Sensors (end turn):** `SCAN`, `PING` (results written back to registers after turn resolves)
 - **Flow (instant):** `JMP`, `JE`, `JNE`, `JG`, `JL`, `JGE`, `JLE`, `DJNZ`, `CMP`, `LBL`
 - **Math (instant):** `SET`, `ADD`, `SUB`
+
+## Collision Priority
+
+Movement conflicts are resolved in this order:
+1. **WALL** - Tank tries to move into wall or out of bounds
+2. **COLLISION** - Both tanks try to swap positions (head-on)
+3. **COLLISION** - Both tanks try to move to same cell
+4. **BLOCKED** - Tank tries to move into other tank's current cell
 
 ## Testing
 
@@ -97,7 +114,7 @@ The test file contains helpers:
 - `src/vm/SimpleCompiler.js` - TankScript to Assembly compiler
 - `src/simulation/BattleManager.js` - Turn resolution, state management, referee logic
 - `src/simulation/Grid.js` - 16×10 arena, raycast for SCAN, collision detection
-- `src/constants.js` - Shared constants (TANK_IDS)
+- `src/constants.js` - Shared game constants (grid size, HP, turn limits, positions)
 
 ## Editor Modes
 

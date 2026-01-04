@@ -10,14 +10,23 @@ export class SimpleCompiler {
     compile(source) {
         this.output = [];
         this.labelCount = 0;
-        // Clean lines: trim, remove comments, skip empty
-        const lines = source.split('\n')
-            .map(l => l.trim())
-            .filter(l => l && !l.startsWith('#') && !l.startsWith(';'));
-        
+        this.currentLine = 0;
+
+        // Parse lines while preserving line numbers
+        const rawLines = source.split('\n');
+        const lines = [];
+        rawLines.forEach((l, idx) => {
+            const trimmed = l.trim();
+            // Skip empty lines and comments but track line numbers
+            if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith(';')) {
+                lines.push({ text: trimmed, lineNum: idx + 1 });
+            }
+        });
+
         const contextStack = []; // Track nested 'if', 'while', 'repeat'
 
-        lines.forEach((line) => {
+        lines.forEach(({ text: line, lineNum }) => {
+            this.currentLine = lineNum;
             try {
                 // Check nesting depth
                 if (['if ', 'while ', 'repeat '].some(k => line.startsWith(k))) {
@@ -140,11 +149,13 @@ export class SimpleCompiler {
                 throw new Error(`Unknown command: "${line}"`);
 
             } catch (err) {
-                throw new Error(`Line "${line}": ${err.message}`);
+                throw new Error(`Line ${lineNum}: ${err.message}`);
             }
         });
 
-        if (contextStack.length > 0) throw new Error("Unclosed block (missing 'end')");
+        if (contextStack.length > 0) {
+            throw new Error(`Unclosed block (missing 'end') - check line ${this.currentLine}`);
+        }
 
         return this.output.join('\n');
     }

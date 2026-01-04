@@ -1,10 +1,37 @@
-import { REGISTERS, OPCODES, READ_ONLY_REGISTERS } from './InstructionSet.js';
+import { REGISTERS, OPCODES, READ_ONLY_REGISTERS, REGISTER_MAX } from './InstructionSet.js';
 
+/**
+ * @typedef {Object} Instruction
+ * @property {string} opcode - The instruction opcode (e.g., 'MOV_F', 'SET')
+ * @property {Array<string|number>} args - Instruction arguments (registers or numbers)
+ * @property {number} [line] - Source line number (if available)
+ */
+
+/**
+ * @typedef {Object} CPUAction
+ * @property {string} type - Action type ('MOVE', 'ROTATE', 'FIRE', 'SCAN', 'PING', 'NOP', 'CPU_OP', 'HALT')
+ * @property {string} [dir] - Direction for MOVE/ROTATE ('FORWARD', 'BACKWARD', 'LEFT', 'RIGHT')
+ * @property {string} [opcode] - Opcode for CPU_OP actions
+ * @property {string} [destDist] - Destination register for SCAN distance
+ * @property {string} [destType] - Destination register for SCAN type
+ * @property {string} [destX] - Destination register for PING X
+ * @property {string} [destY] - Destination register for PING Y
+ */
+
+/**
+ * Virtual CPU for tank program execution.
+ * All registers are 8-bit unsigned (0-255) with wrapping arithmetic.
+ */
 export class CPU {
+    /**
+     * @param {Instruction[]} program - Parsed program instructions
+     * @param {Object<string, number>} labels - Map of label names to instruction indices
+     */
     constructor(program, labels) {
-        this.program = program; // Array of { opcode, args }
-        this.labels = labels;   // Map of "LabelName" -> Program Index
+        this.program = program;
+        this.labels = labels;
 
+        // All registers are 8-bit (0-255), values wrap on overflow
         this.registers = {
             [REGISTERS.R0]: 0,
             [REGISTERS.R1]: 0,
@@ -22,13 +49,14 @@ export class CPU {
             [REGISTERS.AMMO]: 0, // Tank Ammo (read-only)
         };
 
-        this.yieldAction = null; // Output for the Simulator (e.g., { type: 'MOVE', direction: 'F' })
+        this.yieldAction = null;
         this.isDone = false;
+        this.lastError = null;
     }
 
     /**
      * Executes exactly one instruction.
-     * @returns {Object|null} Action object (Move/Scan/Fire), CPU_OP (Math/Flow), or null (Done)
+     * @returns {CPUAction|null} Action object for game simulation, or null if program ended
      */
     step() {
         if (this.registers.PC >= this.program.length) {
@@ -87,46 +115,71 @@ export class CPU {
                 if (this.registers.CMP !== 0) this.jump(args[0]);
                 break;
             case OPCODES.JG:
-                if (this.registers.CMP === 1) this.jump(args[0]);
+                if (this.getSignedCMP() > 0) this.jump(args[0]);
                 break;
             case OPCODES.JL:
-                if (this.registers.CMP === -1) this.jump(args[0]);
+                if (this.getSignedCMP() < 0) this.jump(args[0]);
                 break;
             case OPCODES.JGE:
-                if (this.registers.CMP >= 0) this.jump(args[0]);
+                if (this.getSignedCMP() >= 0) this.jump(args[0]);
                 break;
             case OPCODES.JLE:
-                if (this.registers.CMP <= 0) this.jump(args[0]);
+                if (this.getSignedCMP() <= 0) this.jump(args[0]);
                 break;
             case OPCODES.DJNZ:
-                // Ensure args[0] is a valid writable register
+                // Decrement and Jump if Not Zero
+                // Don't decrement if already 0 (prevents wrap to 255 causing infinite loop)
                 if (this.registers[args[0]] !== undefined && !READ_ONLY_REGISTERS.includes(args[0])) {
-                    this.registers[args[0]]--;
-                    if (this.registers[args[0]] !== 0) this.jump(args[1]);
+                    if (this.registers[args[0]] !== 0) {
+                        this.registers[args[0]] = this.mask(this.registers[args[0]] - 1);
+                        if (this.registers[args[0]] !== 0) this.jump(args[1]);
+                    }
                 }
                 break;
 
-            // --- MATH ---
+            // --- MATH (all results masked to 8-bit) ---
             case OPCODES.SET:
                 if (!READ_ONLY_REGISTERS.includes(args[0])) {
-                    this.registers[args[0]] = this.getValue(args[1]);
+                    this.registers[args[0]] = this.mask(this.getValue(args[1]));
                 }
                 break;
             case OPCODES.ADD:
                 if (!READ_ONLY_REGISTERS.includes(args[0])) {
-                    this.registers[args[0]] += this.getValue(args[1]);
+                    this.registers[args[0]] = this.mask(this.registers[args[0]] + this.getValue(args[1]));
                 }
                 break;
             case OPCODES.SUB:
                 if (!READ_ONLY_REGISTERS.includes(args[0])) {
-                    this.registers[args[0]] -= this.getValue(args[1]);
+                    this.registers[args[0]] = this.mask(this.registers[args[0]] - this.getValue(args[1]));
                 }
                 break;
         }
         return null; // Continue execution
     }
 
-    // Helper: Jump to Label
+    /**
+     * Mask value to 8-bit unsigned (0-255)
+     * @param {number} value - Value to mask
+     * @returns {number} Value masked to 0-255
+     */
+    mask(value) {
+        return value & REGISTER_MAX;
+    }
+
+    /**
+     * Get signed interpretation of CMP register.
+     * CMP stores 0, 1, or 255 (for -1). This interprets 255 as -1.
+     * @returns {number} Signed value (-1, 0, or 1)
+     */
+    getSignedCMP() {
+        const cmp = this.registers.CMP;
+        return cmp > 127 ? cmp - 256 : cmp;
+    }
+
+    /**
+     * Jump to a labeled instruction
+     * @param {string} labelName - Name of the label to jump to
+     */
     jump(labelName) {
         const addr = this.labels[labelName];
         if (addr !== undefined) {
@@ -138,36 +191,57 @@ export class CPU {
         }
     }
 
-    // Helper: Compare
+    /**
+     * Compare two values and set CMP register
+     * @param {string} reg - Register to compare
+     * @param {string|number} valOrReg - Value or register to compare against
+     */
     compare(reg, valOrReg) {
         const v1 = this.registers[reg];
         const v2 = this.getValue(valOrReg);
         if (v1 === v2) this.registers.CMP = 0;
         else if (v1 > v2) this.registers.CMP = 1;
-        else this.registers.CMP = -1;
+        else this.registers.CMP = 255;  // -1 in two's complement byte
     }
 
-    // Helper: Get Value (Register or Number)
+    /**
+     * Get value from a register or return literal number
+     * @param {string|number} arg - Register name or literal number
+     * @returns {number} The value (0-255)
+     */
     getValue(arg) {
         if (typeof arg === 'number') return arg;
         if (this.registers[arg] !== undefined) return this.registers[arg];
-        // Error case
+        // Error case - unknown register (should be caught at parse time)
+        console.warn(`CPU: Unknown register '${arg}', returning 0`);
+        this.lastError = `Unknown register: ${arg}`;
         return 0;
     }
-    
-    // External Input: Used by Simulator to write SCAN results
+
+    /**
+     * Set a register value (used by BattleManager for SCAN/PING results)
+     * @param {string} reg - Register name (R0-R5, ACC)
+     * @param {number} val - Value to set (will be masked to 0-255)
+     */
     setRegister(reg, val) {
         if (this.registers[reg] !== undefined && !READ_ONLY_REGISTERS.includes(reg)) {
-            this.registers[reg] = val;
+            this.registers[reg] = this.mask(val);
         }
     }
 
-    // Update tank position and direction (called by BattleManager before each step)
+    /**
+     * Update read-only tank state registers (called by BattleManager before each step)
+     * @param {number} x - Tank X position (0-15)
+     * @param {number} y - Tank Y position (0-9)
+     * @param {number} direction - Tank facing direction (0=E, 1=S, 2=W, 3=N)
+     * @param {number} hp - Tank health points
+     * @param {number} ammo - Tank ammo (0 or 1)
+     */
     updateTankState(x, y, direction, hp, ammo) {
-        this.registers[REGISTERS.PX] = x;
-        this.registers[REGISTERS.PY] = y;
-        this.registers[REGISTERS.DIR] = direction;
-        this.registers[REGISTERS.HP] = hp;
-        this.registers[REGISTERS.AMMO] = ammo;
+        this.registers[REGISTERS.PX] = this.mask(x);
+        this.registers[REGISTERS.PY] = this.mask(y);
+        this.registers[REGISTERS.DIR] = this.mask(direction);
+        this.registers[REGISTERS.HP] = this.mask(hp);
+        this.registers[REGISTERS.AMMO] = this.mask(ammo);
     }
 }

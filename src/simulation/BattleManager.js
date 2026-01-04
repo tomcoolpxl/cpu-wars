@@ -2,42 +2,93 @@ import { CPU } from '../vm/CPU.js';
 import { Tokenizer } from '../vm/Tokenizer.js';
 import { Parser } from '../vm/Parser.js';
 import { Grid } from './Grid.js';
-import { TANK_IDS } from '../constants.js';
+import {
+    TANK_IDS,
+    GRID_WIDTH,
+    GRID_HEIGHT,
+    INITIAL_HP,
+    MAX_OPS_PER_TURN,
+    BULLET_MAX_RANGE,
+    BULLET_SPEED,
+    MAX_TURNS,
+    START_POSITIONS,
+    DIRS
+} from '../constants.js';
 
 export { TANK_IDS };
-const DIRS = {
-    0: { x: 1, y: 0 },  // East/Right
-    1: { x: 0, y: 1 },  // South/Down
-    2: { x: -1, y: 0 }, // West/Left
-    3: { x: 0, y: -1 }  // North/Up
-};
 
+/**
+ * @typedef {Object} Tank
+ * @property {number} x - Grid X position (0-15)
+ * @property {number} y - Grid Y position (0-9)
+ * @property {number} facing - Direction (0=E, 1=S, 2=W, 3=N)
+ * @property {number} hp - Health points (0-3)
+ * @property {CPU|null} cpu - The tank's CPU instance
+ * @property {string|null} lastAction - Last action type
+ * @property {string|null} lastFeedback - Feedback message (WALL, BLOCKED, etc.)
+ * @property {number} debugPC - Program counter for debugging
+ * @property {string|null} debugIR - Instruction register for debugging
+ * @property {Object} debugRegisters - Copy of registers for debugging
+ * @property {number} turnOps - Operations this turn
+ * @property {number} totalOps - Total operations executed
+ */
+
+/**
+ * @typedef {Object} Bullet
+ * @property {number} id - Unique bullet ID
+ * @property {string} owner - Tank ID (P1 or P2)
+ * @property {number} x - Grid X position
+ * @property {number} y - Grid Y position
+ * @property {number} dx - X direction (-1, 0, or 1)
+ * @property {number} dy - Y direction (-1, 0, or 1)
+ * @property {number} dist - Distance traveled
+ */
+
+/**
+ * @typedef {Object} GameState
+ * @property {Object<string, Tank>} tanks - Tank states keyed by ID
+ * @property {Bullet[]} bullets - Active bullets
+ * @property {string[]} log - Game log messages
+ * @property {Object[]} events - Game events for visualization
+ * @property {boolean} gameOver - Whether game has ended
+ * @property {string|null} winner - Winner ID or draw message
+ * @property {number} turnCount - Current turn number
+ */
+
+/**
+ * Manages the battle simulation between two tanks.
+ * Handles turn resolution, movement, bullets, and game state.
+ */
 export class BattleManager {
     constructor() {
-        this.grid = new Grid(16, 10);
+        this.grid = new Grid(GRID_WIDTH, GRID_HEIGHT);
         this.tokenizer = new Tokenizer();
         this.parser = new Parser();
-        
+
         this.tanks = {
-            [TANK_IDS.P1]: { x: 0, y: 4, facing: 0, hp: 3, cpu: null, lastAction: null, lastFeedback: null, debugPC: 0, debugIR: null, debugRegisters: {}, turnOps: 0, totalOps: 0 },
-            [TANK_IDS.P2]: { x: 15, y: 5, facing: 2, hp: 3, cpu: null, lastAction: null, lastFeedback: null, debugPC: 0, debugIR: null, debugRegisters: {}, turnOps: 0, totalOps: 0 }
+            [TANK_IDS.P1]: { ...START_POSITIONS.P1, hp: INITIAL_HP, cpu: null, lastAction: null, lastFeedback: null, debugPC: 0, debugIR: null, debugRegisters: {}, turnOps: 0, totalOps: 0 },
+            [TANK_IDS.P2]: { ...START_POSITIONS.P2, hp: INITIAL_HP, cpu: null, lastAction: null, lastFeedback: null, debugPC: 0, debugIR: null, debugRegisters: {}, turnOps: 0, totalOps: 0 }
         };
-        
-        this.bullets = []; 
-        this.log = []; 
-        this.events = []; 
+
+        this.bullets = [];
+        this.log = [];
+        this.events = [];
         this.isGameOver = false;
         this.winner = null;
-        
+
         this.pendingActions = { P1: null, P2: null };
         this.turnOps = { P1: 0, P2: 0 };
         this.turnCount = 0;
-        this.MAX_OPS = 50; 
+        this.MAX_OPS = MAX_OPS_PER_TURN;
         this.eventIdCounter = 0;
 
         this.setupArena(1);
     }
 
+    /**
+     * Configure arena walls based on level
+     * @param {number} level - Level number (1=empty, 2=center wall, 3=scattered obstacles)
+     */
     setupArena(level = 1) {
         this.grid.walls.clear();
         if (level === 2) {
@@ -49,6 +100,12 @@ export class BattleManager {
         }
     }
 
+    /**
+     * Load and parse assembly code for both tanks
+     * @param {string} p1Code - Player 1 assembly source
+     * @param {string} p2Code - Player 2 assembly source
+     * @returns {{success: boolean, error?: string, p1Program?: Object[], p2Program?: Object[]}}
+     */
     loadCode(p1Code, p2Code) {
         try {
             const t1 = this.tokenizer.tokenize(p1Code);
@@ -75,14 +132,29 @@ export class BattleManager {
         this.turnCount = 0;
         this.isGameOver = false;
         this.winner = null;
-        this.log = ["Turn reset."]; 
-        this.events = []; 
-        this.bullets = []; 
-        
-        this.tanks.P1.x = 0; this.tanks.P1.y = 4; this.tanks.P1.facing = 0; this.tanks.P1.hp = 3; this.tanks.P1.totalOps = 0;
-        this.tanks.P2.x = 15; this.tanks.P2.y = 5; this.tanks.P2.facing = 2; this.tanks.P2.hp = 3; this.tanks.P2.totalOps = 0;
+        this.log = ["Turn reset."];
+        this.events = [];
+        this.bullets = [];
+
+        // Reset tanks to starting positions
+        this.tanks.P1.x = START_POSITIONS.P1.x;
+        this.tanks.P1.y = START_POSITIONS.P1.y;
+        this.tanks.P1.facing = START_POSITIONS.P1.facing;
+        this.tanks.P1.hp = INITIAL_HP;
+        this.tanks.P1.totalOps = 0;
+
+        this.tanks.P2.x = START_POSITIONS.P2.x;
+        this.tanks.P2.y = START_POSITIONS.P2.y;
+        this.tanks.P2.facing = START_POSITIONS.P2.facing;
+        this.tanks.P2.hp = INITIAL_HP;
+        this.tanks.P2.totalOps = 0;
     }
 
+    /**
+     * Execute one CPU step for a tank
+     * @param {string} tankId - Tank ID (P1 or P2)
+     * @returns {Object|null} Action result from CPU step
+     */
     stepCPU(tankId) {
         const tank = this.tanks[tankId];
         if (!tank.cpu || tank.hp <= 0) return null; 
@@ -125,6 +197,9 @@ export class BattleManager {
         this.events.push({ id: this.eventIdCounter++, type, ...data });
     }
 
+    /**
+     * Resolve a complete game turn: move bullets, resolve actions, apply movements
+     */
     resolveTurn() {
         this.turnCount++;
         this.turnOps.P1 = 0;
@@ -152,19 +227,38 @@ export class BattleManager {
         // 4. Apply Movements
         this.applyMovements(intents);
 
-        if (this.tanks.P1.hp <= 0 && this.tanks.P2.hp <= 0) { this.isGameOver = true; this.winner = 'DRAW'; }
-        else if (this.tanks.P1.hp <= 0) { this.isGameOver = true; this.winner = 'P2'; }
-        else if (this.tanks.P2.hp <= 0) { this.isGameOver = true; this.winner = 'P1'; }
-        
+        // Check for game over conditions
+        if (this.tanks.P1.hp <= 0 && this.tanks.P2.hp <= 0) {
+            this.isGameOver = true;
+            this.winner = 'DRAW';
+        } else if (this.tanks.P1.hp <= 0) {
+            this.isGameOver = true;
+            this.winner = 'P2';
+        } else if (this.tanks.P2.hp <= 0) {
+            this.isGameOver = true;
+            this.winner = 'P1';
+        }
+
+        // Check for stalemate (both programs halted)
         if (!this.isGameOver && this.pendingActions.P1?.type === 'HALT' && this.pendingActions.P2?.type === 'HALT') {
             this.isGameOver = true;
             this.winner = 'DRAW (STALEMATE)';
+        }
+
+        // Check for turn limit (prevent infinite games)
+        if (!this.isGameOver && this.turnCount >= MAX_TURNS) {
+            this.isGameOver = true;
+            this.winner = 'DRAW (TURN LIMIT)';
         }
 
         this.pendingActions.P1 = null;
         this.pendingActions.P2 = null;
     }
 
+    /**
+     * Get current game state for UI rendering
+     * @returns {GameState}
+     */
     getState() {
         return {
             tanks: JSON.parse(JSON.stringify(this.tanks)),
@@ -254,34 +348,53 @@ export class BattleManager {
     }
 
     applyMovements(intents) {
+        // Collision resolution priority (in order):
+        // 1. WALL - Tank tries to move into wall or out of bounds (highest priority)
+        // 2. COLLISION - Head-on: both tanks try to swap positions
+        // 3. COLLISION - Same target: both tanks try to move to same cell
+        // 4. BLOCKED - Tank tries to move into other tank's current cell
+        // Note: Once a tank's intent is rejected, it's removed from further checks
+
         const p1Move = intents.P1;
         const p2Move = intents.P2;
 
+        // 1. Wall collision (highest priority)
         if (p1Move && !this.grid.isValid(p1Move.targetX, p1Move.targetY)) {
-            this.tanks.P1.lastFeedback = 'WALL'; delete intents.P1;
+            this.tanks.P1.lastFeedback = 'WALL';
+            delete intents.P1;
         }
         if (p2Move && !this.grid.isValid(p2Move.targetX, p2Move.targetY)) {
-            this.tanks.P2.lastFeedback = 'WALL'; delete intents.P2;
+            this.tanks.P2.lastFeedback = 'WALL';
+            delete intents.P2;
         }
 
-        if (intents.P1 && intents.P2 && 
+        // 2. Head-on collision (both tanks try to swap positions)
+        if (intents.P1 && intents.P2 &&
             intents.P1.targetX === this.tanks.P2.x && intents.P1.targetY === this.tanks.P2.y &&
             intents.P2.targetX === this.tanks.P1.x && intents.P2.targetY === this.tanks.P1.y) {
-            this.tanks.P1.lastFeedback = 'COLLISION'; this.tanks.P2.lastFeedback = 'COLLISION';
-            delete intents.P1; delete intents.P2;
+            this.tanks.P1.lastFeedback = 'COLLISION';
+            this.tanks.P2.lastFeedback = 'COLLISION';
+            delete intents.P1;
+            delete intents.P2;
         }
 
-        if (intents.P1 && intents.P2 && 
+        // 3. Same-target collision (both tanks try to move to same cell)
+        if (intents.P1 && intents.P2 &&
             intents.P1.targetX === intents.P2.targetX && intents.P1.targetY === intents.P2.targetY) {
-            this.tanks.P1.lastFeedback = 'COLLISION'; this.tanks.P2.lastFeedback = 'COLLISION';
-            delete intents.P1; delete intents.P2;
+            this.tanks.P1.lastFeedback = 'COLLISION';
+            this.tanks.P2.lastFeedback = 'COLLISION';
+            delete intents.P1;
+            delete intents.P2;
         }
 
+        // 4. Blocked by other tank (one tank tries to move into other's current position)
         if (intents.P1 && intents.P1.targetX === this.tanks.P2.x && intents.P1.targetY === this.tanks.P2.y) {
-            this.tanks.P1.lastFeedback = 'BLOCKED'; delete intents.P1;
+            this.tanks.P1.lastFeedback = 'BLOCKED';
+            delete intents.P1;
         }
         if (intents.P2 && intents.P2.targetX === this.tanks.P1.x && intents.P2.targetY === this.tanks.P1.y) {
-            this.tanks.P2.lastFeedback = 'BLOCKED'; delete intents.P2;
+            this.tanks.P2.lastFeedback = 'BLOCKED';
+            delete intents.P2;
         }
 
         if (intents.P1) { this.tanks.P1.x = intents.P1.targetX; this.tanks.P1.y = intents.P1.targetY; }
@@ -298,10 +411,10 @@ export class BattleManager {
         const surviving = [];
         for (let b of this.bullets) {
             let active = true;
-            for (let i = 0; i < 2; i++) {
+            for (let i = 0; i < BULLET_SPEED; i++) {
                 if (!active) break;
                 b.x += b.dx; b.y += b.dy; b.dist++;
-                if (b.dist > 40) { active = false; continue; }
+                if (b.dist > BULLET_MAX_RANGE) { active = false; continue; }
                 
                 if (!this.grid.isValid(b.x, b.y)) {
                     active = false;

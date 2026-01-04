@@ -63,6 +63,10 @@ const scriptPanelP2 = document.getElementById('p2-script-panel');
 // Editor mode state: 'tankscript' or 'assembly' per player
 const editorModes = { p1: 'tankscript', p2: 'tankscript' };
 
+// Track last compiled source to detect changes
+let lastCompiledP1 = '';
+let lastCompiledP2 = '';
+
 // Compiler & Parser
 const compiler = new SimpleCompiler();
 const tokenizer = new Tokenizer();
@@ -671,6 +675,13 @@ let simulationTimer = null;
 let runModeSpeed = 500; 
 let microOpSpeed = 20;  
 let isFastForward = false;
+
+// Update control button active states (RUN, FAST, HALT are mutually exclusive)
+function updateControlButtons() {
+    btnRun.classList.toggle('active', simulationRunning && !isFastForward);
+    btnFf.classList.toggle('active', simulationRunning && isFastForward);
+    btnStop.classList.toggle('active', !simulationRunning);
+}
 let simulationRunning = false;
 
 const battleManager = new BattleManager();
@@ -736,7 +747,7 @@ function executeLoopStep() {
 function startSimulationLoop() {
     if (simulationTimer) clearTimeout(simulationTimer);
     simulationRunning = true;
-    btnStop.classList.remove('active');
+    updateControlButtons();
     executeLoopStep();
 }
 
@@ -744,7 +755,8 @@ function stopSimulation() {
     if (simulationTimer) clearTimeout(simulationTimer);
     simulationTimer = null;
     simulationRunning = false;
-    btnStop.classList.add('active'); // RED state
+    isFastForward = false;
+    updateControlButtons();
 }
 
 // Compile button handlers
@@ -768,20 +780,33 @@ btnCompileP2.addEventListener('click', () => {
 btnRun.addEventListener('click', () => {
     if (simulationRunning && !isFastForward) return;
 
-    // Check if we can continue from current state (both CPUs have code loaded)
-    const hasLoadedCode = battleManager.tanks.P1.cpu && battleManager.tanks.P2.cpu;
+    // Get current source code for both players
+    const p1Source = editorModes.p1 === 'assembly' ? asmEditorP1.value : scriptP1.value;
+    const p2Source = editorModes.p2 === 'assembly' ? asmEditorP2.value : scriptP2.value;
 
-    if (!hasLoadedCode) {
-        // No code loaded - compile and load fresh
+    // Check if we need to recompile (no code loaded OR source changed)
+    const hasLoadedCode = battleManager.tanks.P1.cpu && battleManager.tanks.P2.cpu;
+    const codeChanged = p1Source !== lastCompiledP1 || p2Source !== lastCompiledP2;
+
+    if (!hasLoadedCode || codeChanged) {
+        // Compile and load fresh
         const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1);
         const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2);
         if (!p1 || !p2) return;
+
+        // Track the source we just compiled
+        lastCompiledP1 = p1Source;
+        lastCompiledP2 = p2Source;
+
+        // Reset arena when reloading code
+        const level = parseInt(levelSelect.value);
+        battleManager.setupArena(level);
+        battleManager.resetTurnState();
 
         const res = battleManager.loadCode(p1.asm, p2.asm);
         if (!res.success) { showError('P1', res.error); return; }
 
         // Send walls and initial tank state to view
-        const level = parseInt(levelSelect.value);
         window.dispatchEvent(new CustomEvent('run-sim', {
             detail: {
                 level,
@@ -793,7 +818,7 @@ btnRun.addEventListener('click', () => {
             }
         }));
     }
-    // If code was already loaded (e.g., HALTED state), just continue without reloading
+    // If code was already loaded and unchanged, just continue from current state
 
     isFastForward = false;
     startSimulationLoop();
@@ -833,13 +858,42 @@ btnStep.addEventListener('click', () => {
 
 btnFf.addEventListener('click', () => {
     if (simulationRunning && isFastForward) return;
-    
-    // Lazy compile/load
-    if (!battleManager.tanks.P1.cpu) {
-         const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1);
-         const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2);
-         if (!p1 || !p2) return;
-         battleManager.loadCode(p1.asm, p2.asm);
+
+    // Get current source code for both players
+    const p1Source = editorModes.p1 === 'assembly' ? asmEditorP1.value : scriptP1.value;
+    const p2Source = editorModes.p2 === 'assembly' ? asmEditorP2.value : scriptP2.value;
+
+    // Check if we need to recompile (no code loaded OR source changed)
+    const hasLoadedCode = battleManager.tanks.P1.cpu && battleManager.tanks.P2.cpu;
+    const codeChanged = p1Source !== lastCompiledP1 || p2Source !== lastCompiledP2;
+
+    if (!hasLoadedCode || codeChanged) {
+        const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1);
+        const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2);
+        if (!p1 || !p2) return;
+
+        // Track the source we just compiled
+        lastCompiledP1 = p1Source;
+        lastCompiledP2 = p2Source;
+
+        // Reset arena when reloading code
+        const level = parseInt(levelSelect.value);
+        battleManager.setupArena(level);
+        battleManager.resetTurnState();
+
+        const res = battleManager.loadCode(p1.asm, p2.asm);
+        if (!res.success) { showError('P1', res.error); return; }
+
+        window.dispatchEvent(new CustomEvent('run-sim', {
+            detail: {
+                level,
+                walls: Array.from(battleManager.grid.walls),
+                tanks: {
+                    P1: { x: battleManager.tanks.P1.x, y: battleManager.tanks.P1.y, facing: battleManager.tanks.P1.facing },
+                    P2: { x: battleManager.tanks.P2.x, y: battleManager.tanks.P2.y, facing: battleManager.tanks.P2.facing }
+                }
+            }
+        }));
     }
     isFastForward = true;
     startSimulationLoop();
@@ -852,7 +906,12 @@ btnReset.addEventListener('click', () => {
     battleManager.resetTurnState();
     const p1 = compilePlayer('P1', scriptP1, viewerP1, machineP1);
     const p2 = compilePlayer('P2', scriptP2, viewerP2, machineP2);
-    if (p1 && p2) battleManager.loadCode(p1.asm, p2.asm);
+    if (p1 && p2) {
+        battleManager.loadCode(p1.asm, p2.asm);
+        // Track compiled source
+        lastCompiledP1 = editorModes.p1 === 'assembly' ? asmEditorP1.value : scriptP1.value;
+        lastCompiledP2 = editorModes.p2 === 'assembly' ? asmEditorP2.value : scriptP2.value;
+    }
     updateUIState(battleManager.getState());
     // Send walls and initial tank state to view
     window.dispatchEvent(new CustomEvent('reset-sim', {

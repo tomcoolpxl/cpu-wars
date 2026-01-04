@@ -541,10 +541,11 @@ describe('CPU - Variable Operations', () => {
         assertEqual(cpu.registers[REGISTERS.R0], 42, 'R0 should be 42');
     });
 
-    test('SET with negative number', () => {
+    test('SET with negative number wraps to unsigned byte', () => {
+        // -5 in 8-bit two's complement is 251 (256 - 5)
         const cpu = createCPU('var1 = -5\nmove');
         runUntilAction(cpu);
-        assertEqual(cpu.registers[REGISTERS.R1], -5, 'R1 should be -5');
+        assertEqual(cpu.registers[REGISTERS.R1], 251, 'R1 should be 251 (-5 as unsigned byte)');
     });
 
     test('ADD increments register', () => {
@@ -716,10 +717,41 @@ describe('CPU - External Register Access', () => {
         assertEqual(cpu.registers[REGISTERS.R0], 123, 'R0 should be 123');
     });
 
-    test('setRegister works with ACC', () => {
+    test('setRegister masks to 8-bit', () => {
         const cpu = createCPU('move');
+        // 456 & 0xFF = 200 (8-bit masking)
         cpu.setRegister(REGISTERS.ACC, 456);
-        assertEqual(cpu.registers[REGISTERS.ACC], 456, 'ACC should be 456');
+        assertEqual(cpu.registers[REGISTERS.ACC], 200, 'ACC should be 200 (456 masked to 8-bit)');
+    });
+});
+
+describe('CPU - 8-bit Register Wrapping', () => {
+    test('ADD wraps at 255', () => {
+        const cpu = createCPU('var0 = 255\nvar0 = var0 + 1\nmove');
+        runUntilAction(cpu);
+        assertEqual(cpu.registers[REGISTERS.R0], 0, 'R0 should wrap from 255 to 0');
+    });
+
+    test('SUB wraps at 0', () => {
+        const cpu = createCPU('var0 = 0\nvar0 = var0 - 1\nmove');
+        runUntilAction(cpu);
+        assertEqual(cpu.registers[REGISTERS.R0], 255, 'R0 should wrap from 0 to 255');
+    });
+
+    test('CMP comparison still works after wrapping', () => {
+        // After subtracting 1 from 0, we get 255. CMP should treat this as unsigned.
+        const cpu = createCPU('var0 = 0\nvar0 = var0 - 1\nif var0 > 100:\nmove\nend');
+        const actions = runToCompletion(cpu);
+        assertEqual(actions.length, 1, 'should move because 255 > 100');
+    });
+
+    test('DJNZ with 0 does not loop infinitely', () => {
+        // repeat is a post-test loop (like do-while), so body executes once
+        // DJNZ protection prevents 0 from decrementing to 255 and looping forever
+        const cpu = createCPU('var0 = 0\nrepeat var0:\nmove\nend');
+        const actions = runToCompletion(cpu);
+        assertEqual(actions.length, 1, 'should execute body once (post-test loop)');
+        assertEqual(cpu.registers[REGISTERS.R0], 0, 'R0 should stay at 0 (not decrement to 255)');
     });
 });
 
@@ -927,6 +959,26 @@ describe('Parser - Parsing', () => {
         const { error } = parser.parse(tokens);
         assert(error, 'should have error');
         assert(error.includes('Unknown instruction'), 'should mention unknown');
+    });
+
+    test('rejects register name as label (type error)', () => {
+        // Register names can't be used as labels because tokenizer
+        // classifies them as REGISTER, not INSTRUCTION (identifier)
+        const tokenizer = new Tokenizer();
+        const parser = new Parser();
+        const tokens = tokenizer.tokenize('LBL R0');
+        const { error } = parser.parse(tokens);
+        assert(error, 'should have error');
+        assert(error.includes('Invalid argument'), 'should reject register as label');
+    });
+
+    test('reports too many arguments error', () => {
+        const tokenizer = new Tokenizer();
+        const parser = new Parser();
+        const tokens = tokenizer.tokenize('SET R0, 5, 10');
+        const { error } = parser.parse(tokens);
+        assert(error, 'should have error');
+        assert(error.includes('Too many arguments'), 'should mention too many arguments');
     });
 });
 

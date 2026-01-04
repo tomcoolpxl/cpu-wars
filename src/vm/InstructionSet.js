@@ -2,6 +2,10 @@
  * Instruction Set Architecture (ISA) for CPU Wars
  */
 
+// All registers are 8-bit (0-255)
+export const REGISTER_BITS = 8;
+export const REGISTER_MAX = 0xFF;  // 255
+
 export const REGISTERS = {
     R0: 'R0',
     R1: 'R1',

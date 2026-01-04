@@ -69,7 +69,19 @@ export class BattleScene extends Phaser.Scene {
         this.uiInfo = this.add.text(10, bottomY, 'Actions: 0', { font: '12px monospace', fill: '#888888' });
         this.uiP1 = this.add.text(this.canvasWidth - 130, bottomY, 'P1: 3HP', { font: '12px monospace', fill: '#0088ff' }).setOrigin(1, 0);
         this.uiP2 = this.add.text(this.canvasWidth - 10, bottomY, 'P2: 3HP', { font: '12px monospace', fill: '#ff4444' }).setOrigin(1, 0);
-        this.uiGameOver = this.add.text(320, this.titleHeight + this.canvasHeight / 2, '', { font: 'bold 20px monospace', fill: '#ffff00' }).setOrigin(0.5, 0.5);
+
+        // Game over display with background box (high depth to appear above tanks)
+        const centerX = this.canvasWidth / 2;
+        const centerY = this.titleHeight + this.canvasHeight / 2;
+        this.uiGameOverBg = this.add.graphics();
+        this.uiGameOverBg.setVisible(false);
+        this.uiGameOverBg.setDepth(999);
+        this.uiGameOver = this.add.text(centerX, centerY, '', {
+            font: 'bold 32px monospace',
+            fill: '#ffff00',
+            stroke: '#000000',
+            strokeThickness: 6
+        }).setOrigin(0.5, 0.5).setDepth(1000);
     }
 
     drawTitle() {
@@ -148,8 +160,8 @@ export class BattleScene extends Phaser.Scene {
         const p2Data = this.initialTanks.P2;
         const halfTile = this.tileSize / 2;
 
-        this.tankSprites[TANK_IDS.P1] = this.add.sprite(p1Data.x * this.tileSize + halfTile, this.titleHeight + p1Data.y * this.tileSize + halfTile, 'tank_p1').setOrigin(0.5).setAngle(p1Data.facing * 90);
-        this.tankSprites[TANK_IDS.P2] = this.add.sprite(p2Data.x * this.tileSize + halfTile, this.titleHeight + p2Data.y * this.tileSize + halfTile, 'tank_p2').setOrigin(0.5).setAngle(p2Data.facing * 90);
+        this.tankSprites[TANK_IDS.P1] = this.add.sprite(p1Data.x * this.tileSize + halfTile, this.titleHeight + p1Data.y * this.tileSize + halfTile, 'tank_p1').setOrigin(0.5).setAngle(p1Data.facing * 90).setDepth(10);
+        this.tankSprites[TANK_IDS.P2] = this.add.sprite(p2Data.x * this.tileSize + halfTile, this.titleHeight + p2Data.y * this.tileSize + halfTile, 'tank_p2').setOrigin(0.5).setAngle(p2Data.facing * 90).setDepth(10);
     }
 
     drawWalls() {
@@ -171,6 +183,7 @@ export class BattleScene extends Phaser.Scene {
         this.initialTanks = data.tanks || null;
         this.createEntities();
         this.uiGameOver.setText('');
+        this.uiGameOverBg.setVisible(false);
         this.lastLogIndex = 0;
         this.processedEvents.clear();
     }
@@ -182,6 +195,7 @@ export class BattleScene extends Phaser.Scene {
         this.createEntities();
         this.uiInfo.setText("Ready");
         this.uiGameOver.setText('');
+        this.uiGameOverBg.setVisible(false);
         this.lastLogIndex = 0;
         this.processedEvents.clear();
     }
@@ -211,7 +225,22 @@ export class BattleScene extends Phaser.Scene {
         }
         
         if (state.gameOver) {
-             this.uiGameOver.setText(state.winner === 'DRAW' ? 'DRAW!' : `${state.winner} WINS!`);
+            const text = state.winner.includes('DRAW') ? 'DRAW!' : `${state.winner} WINS!`;
+            this.uiGameOver.setText(text);
+
+            // Draw background box behind text
+            const bounds = this.uiGameOver.getBounds();
+            const padding = 20;
+            this.uiGameOverBg.clear();
+            this.uiGameOverBg.fillStyle(0x000000, 0.85);
+            this.uiGameOverBg.fillRoundedRect(
+                bounds.x - padding,
+                bounds.y - padding,
+                bounds.width + padding * 2,
+                bounds.height + padding * 2,
+                10
+            );
+            this.uiGameOverBg.setVisible(true);
         }
     }
 
@@ -245,10 +274,7 @@ export class BattleScene extends Phaser.Scene {
                 }
             } else {
                 // New bullet
-                // Note: Bullets move fast. If we spawn at current pos, it looks fine.
-                // If we want to animate from spawn, we need `prevX`.
-                // For now, spawn at current.
-                const sprite = this.add.sprite(targetX, targetY, 'bullet');
+                const sprite = this.add.sprite(targetX, targetY, 'bullet').setDepth(15);
                 sprite.targetX = targetX; sprite.targetY = targetY;
                 this.bulletSprites[b.id] = sprite;
             }
